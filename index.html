@@ -198,6 +198,11 @@
           </button>
         </div>
 
+        <button onclick="clearRoomPresence()" class="w-full py-2 px-3 rounded-xl text-xs font-semibold bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/60 transition flex items-center justify-center space-x-1.5">
+          <i data-lucide="refresh-cw" class="w-4 h-4 text-rose-400"></i>
+          <span>[교사 전용] 유령 세션 및 모든 점(역할) 점유 초기화</span>
+        </button>
+
         <div class="grid grid-cols-2 gap-2">
           <button id="btnNextRound" onclick="proceedToNextRound()" class="hidden py-3 px-3 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 transition flex items-center justify-center space-x-2 text-xs">
             <i data-lucide="arrow-right-circle" class="w-4 h-4"></i>
@@ -582,6 +587,7 @@
 
     const state = {
       isTeacher: false,
+      isInGame: false,
       roomCode: 'CLASS1',
       stage: 1,
       currentRound: 1,
@@ -688,13 +694,14 @@
     }
 
     function registerMyPresence() {
-      if (state.isTeacher || !state.myGroup || !state.myRole) return;
+      if (state.isTeacher || !state.isInGame || !state.myGroup || !state.myRole) return;
+      const now = Date.now();
       const presenceData = {
         room: state.roomCode,
         group: state.myGroup,
         role: state.myRole,
         clientId: clientId,
-        updatedAt: Date.now()
+        updatedAt: now
       };
       activePresence[clientId] = presenceData;
 
@@ -715,6 +722,16 @@
         if (pRef) pRef.remove();
       }
       broadcastSync('PRESENCE_UPDATE', { clientId: clientId, remove: true }, true);
+    }
+
+    function clearRoomPresence() {
+      if (fbDB) {
+        getRoomRef('presence').remove();
+      }
+      for (const k in activePresence) delete activePresence[k];
+      broadcastSync('CLEAR_ALL_PRESENCE', {}, true);
+      updateRoleOptionsForRound();
+      showToast('모든 학생의 점 점유 및 유령 세션이 초기화되었습니다.', 'info');
     }
 
     function initSyncNetwork() {
@@ -818,23 +835,31 @@
           // 5. 학생 참가자 Presence (1인 1점 중복 방지 락)
           roomRef.child('presence').on('value', (snap) => {
             const val = snap.val() || {};
+            const now = Date.now();
             for (const k in activePresence) {
               if (k !== clientId) delete activePresence[k];
             }
             Object.keys(val).forEach(k => {
-              activePresence[k] = val[k];
+              const p = val[k];
+              // 8초 이내에 하트비트가 갱신된 활성 세션만 인정 (유령 세션 필터링)
+              if (p && (!p.updatedAt || (now - p.updatedAt < 8000))) {
+                activePresence[k] = p;
+              } else if (fbDB && p && (now - p.updatedAt >= 8000)) {
+                // 8초 이상 지난 유령 데이터는 DB에서 자동 정리
+                roomRef.child(`presence/${k}`).remove();
+              }
             });
             updateRoleOptionsForRound();
           });
         }
       }
 
-      // 주기적 하트비트 갱신
+      // 주기적 하트비트 갱신 (게임 입장 완료된 학생만)
       setInterval(() => {
-        if (!state.isTeacher && state.myGroup && state.myRole) {
+        if (!state.isTeacher && state.isInGame && state.myGroup && state.myRole) {
           registerMyPresence();
         }
-      }, 5000);
+      }, 3000);
     }
 
     function broadcastSync(action, data = {}, forceImmediate = false) {
@@ -931,6 +956,9 @@
           }
           updateRoleOptionsForRound();
         }
+      } else if (msg.action === 'CLEAR_ALL_PRESENCE') {
+        for (const k in activePresence) delete activePresence[k];
+        updateRoleOptionsForRound();
       } else if (msg.action === 'RUN_BATTLE') {
         if (msg.data) {
           if (msg.data.submissions) state.submissions = msg.data.submissions;
@@ -1579,12 +1607,16 @@
         availableKeys = ['A', 'B', 'C', 'D'];
       }
 
+      const now = Date.now();
       const activeInGroup = {};
       Object.keys(activePresence).forEach(pId => {
-        if (pId === clientId) return; // 본인의 기존 점유는 선택 가능하게 유지
+        if (pId === clientId) return; // 본인의 점유는 제외
         const p = activePresence[pId];
+        // 8초 이내에 유효하게 활동 중인 같은 모둠원만 확인
         if (p && p.room === state.roomCode && Number(p.group) === Number(groupVal)) {
-          activeInGroup[p.role] = true;
+          if (!p.updatedAt || (now - p.updatedAt < 8000)) {
+            activeInGroup[p.role] = true;
+          }
         }
       });
 
@@ -1639,13 +1671,16 @@
       const chosenRound = parseInt(document.getElementById('selectRound').value) || 1;
       const targetRoom = document.getElementById('inputRoomCode').value.trim().toUpperCase() || 'CLASS1';
 
-      // 다른 모둠원이 이미 점유했는지 실시간 최종 검증
+      // 다른 모둠원이 이미 점유했는지 실시간 최종 검증 (8초 이내 활성 세션만)
+      const now = Date.now();
       let isAlreadyTaken = false;
       Object.keys(activePresence).forEach(pId => {
         if (pId === clientId) return;
         const p = activePresence[pId];
         if (p && p.room === targetRoom && Number(p.group) === Number(groupVal) && p.role === selectedRole) {
-          isAlreadyTaken = true;
+          if (!p.updatedAt || (now - p.updatedAt < 8000)) {
+            isAlreadyTaken = true;
+          }
         }
       });
 
@@ -1659,6 +1694,7 @@
       clearMyPresence();
 
       state.isTeacher = false;
+      state.isInGame = true;
       state.roomCode = targetRoom;
       state.currentRound = chosenRound;
       state.myGroup = groupVal;
@@ -1698,6 +1734,7 @@
       const teacherRoom = document.getElementById('inputTeacherRoomCode').value.trim().toUpperCase() || 'CLASS1';
       const chosenRound = parseInt(document.getElementById('selectRound').value) || 1;
       state.isTeacher = true;
+      state.isInGame = true;
       state.roomCode = teacherRoom;
       state.currentRound = chosenRound;
 
@@ -1725,6 +1762,8 @@
     }
 
     function openPortalModal() {
+      state.isInGame = false;
+      clearMyPresence();
       document.getElementById('modalPortal').classList.remove('hidden');
       updateRoleOptionsForRound();
     }
