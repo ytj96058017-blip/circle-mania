@@ -1,0 +1,2350 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>서클 매니아 - 중3 원의 성질 영토 점령전</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Firebase SDK (초고속 실시간 데이터베이스 연동) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script>
+
+  <style>
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    * { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; }
+    canvas { touch-action: none; }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col overflow-x-hidden select-none">
+
+  <!-- HEADER -->
+  <header class="w-full bg-slate-900/90 border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-30 backdrop-blur-md">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+        <i data-lucide="disc" class="w-6 h-6 text-white"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-amber-400 via-orange-300 to-indigo-400">
+          서클 매니아 (Circle Mania)
+        </h1>
+        <p class="text-xs text-slate-400">중3 수학 원의 성질 협동 영토 점령전</p>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-3">
+      <div id="syncBadge" class="flex items-center space-x-1.5 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-full text-xs font-semibold text-emerald-300">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        <span id="syncStatusText">Firebase 실시간 연동 완료</span>
+      </div>
+
+      <div id="roundBadge" class="flex items-center space-x-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-full">
+        <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+        <span id="roundBadgeText" class="text-xs font-semibold text-amber-300">라운드 1 / 5</span>
+      </div>
+
+      <button onclick="openPortalModal()" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg border border-slate-700 transition shadow-sm active:scale-95">
+        <i data-lucide="log-out" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>모드 / 역할 변경</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="toastContainer" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex flex-col space-y-2 items-center w-full max-w-sm px-4"></div>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-1 w-full max-w-7xl mx-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    
+    <!-- LEFT PANEL: CANVAS & INTERACTION AREA -->
+    <div class="lg:col-span-8 flex flex-col space-y-4">
+      
+      <!-- Stage Info HUD & Teacher Demo Bar -->
+      <div class="glass-card rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl">
+        <div class="space-y-1">
+          <div class="flex items-center space-x-2">
+            <span id="stageBadge" class="px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              라운드 1 / 5
+            </span>
+            <h2 id="stageGoalTitle" class="text-base font-bold text-slate-100">1라운드: 원주각 60°</h2>
+          </div>
+          <p id="stageGoalDesc" class="text-xs text-slate-300 font-medium leading-relaxed">
+            💡 <strong>수학 미션:</strong> 원주각 ∠APB = 60° | 🛡️ <strong>영토 전략:</strong> 우리 조의 영토인 [점 A ~ 점 B] 사이의 호 구역을 다른 조와 안 겹치게 차지하세요!
+          </p>
+        </div>
+
+        <div id="teacherDemoTabs" class="hidden flex flex-wrap items-center gap-1.5 bg-slate-900 p-1.5 rounded-xl border border-slate-800 text-xs">
+          <div class="flex items-center space-x-1 border-r border-slate-800 pr-1.5">
+            <button onclick="setTeacherRound(1)" id="btnTeacherRound1" class="px-2 py-1 rounded-lg font-medium bg-indigo-600 text-white transition">R1(60°)</button>
+            <button onclick="setTeacherRound(2)" id="btnTeacherRound2" class="px-2 py-1 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">R2(90°)</button>
+            <button onclick="setTeacherRound(3)" id="btnTeacherRound3" class="px-2 py-1 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">R3(45°)</button>
+            <button onclick="setTeacherRound(4)" id="btnTeacherRound4" class="px-2 py-1 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">R4(80°)</button>
+            <button onclick="setTeacherRound(5)" id="btnTeacherRound5" class="px-2 py-1 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition">R5(70°)</button>
+          </div>
+
+          <button onclick="toggleCentralAngleSector()" id="btnToggleSector" class="px-2.5 py-1.5 rounded-lg font-medium bg-teal-500/20 text-teal-300 border border-teal-500/40 hover:bg-teal-500/30 transition flex items-center space-x-1">
+            <i data-lucide="pie-chart" class="w-3.5 h-3.5 text-teal-400"></i>
+            <span id="btnToggleSectorText">중심각 부채꼴</span>
+          </button>
+
+          <button onclick="toggleGoldenArc()" id="btnToggleGoldenArc" class="px-2.5 py-1.5 rounded-lg font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition flex items-center space-x-1">
+            <i data-lucide="crown" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span id="btnToggleGoldenArcText">황금영토 켜기</span>
+          </button>
+
+          <button onclick="toggleGeometryOverlay()" id="btnToggleOverlay" class="px-2.5 py-1.5 rounded-lg font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 transition flex items-center space-x-1">
+            <i data-lucide="eye-off" class="w-3.5 h-3.5"></i>
+            <span id="btnToggleOverlayText">도형 숨기기</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- MAIN GEOMETRY CANVAS -->
+      <div class="relative glass-card rounded-3xl p-2 sm:p-4 shadow-2xl flex flex-col items-center justify-center overflow-hidden border border-slate-800/80">
+        <div class="absolute top-4 left-4 z-10 bg-slate-900/90 border border-amber-500/30 backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-lg flex items-center space-x-3">
+          <div class="p-2 bg-amber-500/20 rounded-xl">
+            <i data-lucide="target" class="w-5 h-5 text-amber-400"></i>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-400 font-medium">이번 라운드 목표</div>
+            <div id="targetAngleDisplay" class="text-base font-extrabold text-amber-300">목표 원주각 = 60°</div>
+          </div>
+        </div>
+
+        <div id="studentRoleBadge" class="hidden absolute top-4 right-4 z-10 bg-indigo-950/80 border border-indigo-500/40 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-300 flex items-center space-x-1.5">
+          <i data-lucide="user-check" class="w-4 h-4 text-indigo-400"></i>
+          <span id="roleBadgeText">내 담당: 점 A</span>
+        </div>
+
+        <canvas id="geoCanvas" width="600" height="520" class="w-full h-auto max-w-[600px] cursor-crosshair rounded-2xl bg-slate-900/50"></canvas>
+
+        <div id="canvasHudFooter" class="w-full mt-2 bg-slate-900/70 border border-slate-800 rounded-xl p-2.5 text-center text-xs text-slate-300 font-mono">
+          <span id="liveHudText">∠APB = 60° | 중심각 = 120°</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL: DASHBOARD & SUBMISSION CONTROLS -->
+    <div class="lg:col-span-4 flex flex-col space-y-4">
+      
+      <div id="cardStudentControl" class="glass-card rounded-2xl p-5 space-y-4 border border-indigo-500/20 shadow-xl">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-slate-200 flex items-center space-x-2">
+            <i data-lucide="send" class="w-4 h-4 text-indigo-400"></i>
+            <span>우리 모둠 영토 제출</span>
+          </h3>
+          <span id="myGroupLabel" class="text-xs px-2.5 py-1 rounded-full font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">1조 (파랑)</span>
+        </div>
+
+        <div class="bg-indigo-950/60 p-3 rounded-xl border border-indigo-500/30 space-y-1 text-xs text-indigo-200">
+          <p class="font-bold text-amber-300 flex items-center space-x-1">
+            <span>🎯 승리 전략!</span>
+          </p>
+          <p class="text-[11px] leading-relaxed text-slate-300">
+            1. 같은 조원이 점을 움직이면 내 화면에서도 <strong>실시간으로 함께 이동</strong>합니다.<br>
+            2. 라운드별 <strong>수학 각도 미션</strong>을 정확히 맞춰야 전송이 가능합니다!
+          </p>
+        </div>
+
+        <button id="btnSubmitTerritory" onclick="submitGroupTerritory()" class="w-full py-3 px-4 rounded-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white shadow-lg shadow-indigo-600/30 transition transform active:scale-95 flex items-center justify-center space-x-2">
+          <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+          <span>영토 설정안 전송하기</span>
+        </button>
+      </div>
+
+      <div id="cardTeacherControl" class="hidden glass-card rounded-2xl p-5 space-y-4 border border-amber-500/30 shadow-xl">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-amber-300 flex items-center space-x-2">
+            <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400"></i>
+            <span>교사 판정 및 진행 컨트롤</span>
+          </h3>
+          <span class="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">MASTER</span>
+        </div>
+
+        <!-- 💡 교사 전용 독립 2분 타이머 -->
+        <div class="bg-slate-900/90 p-3 rounded-xl border border-amber-500/20 flex items-center justify-between shadow-inner">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="timer" class="w-4 h-4 text-amber-400"></i>
+            <span class="text-xs font-bold text-slate-200">2분 제한 타이머</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span id="teacherTimerDisplay" class="font-mono text-base font-extrabold text-amber-300 tracking-wider">02:00</span>
+            <button onclick="toggleTeacherTimer()" id="btnTeacherTimerStart" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition active:scale-95">시작</button>
+            <button onclick="resetTeacherTimer()" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700 transition active:scale-95">리셋</button>
+          </div>
+        </div>
+
+        <button onclick="generateMockSubmissions()" class="w-full py-2 px-3 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center justify-center space-x-1.5">
+          <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
+          <span>[테스트] 미제출 조 무작위 전송 채우기</span>
+        </button>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btnRevealTerritories" onclick="revealTeacherTerritories()" class="py-3 px-3 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition transform active:scale-95 flex items-center justify-center space-x-1.5 text-xs">
+            <i data-lucide="eye" class="w-4 h-4"></i>
+            <span id="btnRevealText">1. 제출 영토 공개</span>
+          </button>
+          
+          <button id="btnRunBattle" onclick="runTerritoryBattleAnimation()" class="py-3 px-3 rounded-xl font-extrabold bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-400 hover:to-red-400 text-white shadow-lg shadow-orange-500/30 transition transform active:scale-95 flex items-center justify-center space-x-1.5 text-xs">
+            <i data-lucide="swords" class="w-4 h-4"></i>
+            <span>2. 3초 배틀 슬로모션!</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btnNextRound" onclick="proceedToNextRound()" class="hidden py-3 px-3 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 transition flex items-center justify-center space-x-2 text-xs">
+            <i data-lucide="arrow-right-circle" class="w-4 h-4"></i>
+            <span id="btnNextRoundText">다음 라운드 진행</span>
+          </button>
+          <button onclick="openGalleryModal()" class="py-3 px-3 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 transition flex items-center justify-center space-x-1.5 text-xs shadow-md">
+            <i data-lucide="layout-grid" class="w-4 h-4 text-amber-400"></i>
+            <span>활동 갤러리 리포트</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="glass-card rounded-2xl p-4 space-y-3 shadow-xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <h3 class="text-sm font-bold text-slate-200 flex items-center space-x-2">
+            <i data-lucide="trophy" class="w-4 h-4 text-amber-400"></i>
+            <span>모둠별 제출 & 누적 점수</span>
+          </h3>
+          <span class="text-[11px] text-slate-400">총 5라운드 누적</span>
+        </div>
+
+        <div class="space-y-2" id="scoreboardList"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- MODALS -->
+  <div id="modalPortal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6">
+      <div class="text-center space-y-2">
+        <div class="inline-flex p-3 bg-amber-500/10 rounded-2xl border border-amber-500/20 mb-1">
+          <i data-lucide="compass" class="w-8 h-8 text-amber-400"></i>
+        </div>
+        <h2 class="text-xl font-extrabold text-slate-100">서클 매니아 접속 포털</h2>
+        <p class="text-xs text-slate-400">도전할 라운드와 모둠 역할을 선택하여 입장하세요.</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-2xl border border-slate-800">
+        <button onclick="switchPortalTab('student')" id="tabPortalStudent" class="py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white transition">
+          모둠 협동 학생 참여
+        </button>
+        <button onclick="switchPortalTab('teacher')" id="tabPortalTeacher" class="py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200 transition">
+          교사 대형 판정판
+        </button>
+      </div>
+
+      <form id="formStudentPortal" onsubmit="event.preventDefault(); enterStudentGame();" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">교실 방 번호</label>
+          <input type="text" id="inputRoomCode" value="CLASS1" onchange="changeRoomCode()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">도전할 라운드 선택 (선생님 안내)</label>
+          <select id="selectRound" onchange="updateRoleOptionsForRound()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+            <option value="1">1라운드: 원주각 60° (4인 1조)</option>
+            <option value="2">2라운드: 원주각 90° [지름 특별 미션] (4인 1조)</option>
+            <option value="3">3라운드: 원주각 45° (4인 1조)</option>
+            <option value="4">4라운드: 원에 내접하는 사각형 ∠A = 80° (4인 1조)</option>
+            <option value="5">5라운드: 접선과 현이 이루는 각 70° (4인 1조)</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">우리 모둠 선택</label>
+            <select id="selectGroup" onchange="updateRoleOptionsForRound()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+              <option value="1">1조 (파랑)</option>
+              <option value="2">2조 (초록)</option>
+              <option value="3">3조 (주황)</option>
+              <option value="4">4조 (분홍)</option>
+              <option value="5">5조 (보라)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">내가 담당할 점 (역할)</label>
+            <select id="selectRole" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"></select>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800 leading-normal">
+          💡 <strong class="text-indigo-400">1인 1점 담당 법칙:</strong> 모둠원 4명이 서로 다른 점을 나누어 맡습니다. 원하는 점을 선택하고 입장하세요!
+        </p>
+
+        <button type="submit" class="w-full py-3.5 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition">
+          모둠 협동 게임 입장하기
+        </button>
+      </form>
+
+      <form id="formTeacherPortal" onsubmit="event.preventDefault(); enterTeacherGame();" class="hidden space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">교실 방 번호</label>
+          <input type="text" id="inputTeacherRoomCode" value="CLASS1" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5">교사 인증 PIN 번호</label>
+          <input type="password" id="inputTeacherPin" placeholder="비밀번호 입력" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-amber-500">
+          <p id="teacherPinError" class="hidden text-[11px] text-red-400 mt-1">비밀번호가 올바르지 않습니다. (기본 PIN: 1234)</p>
+        </div>
+
+        <button type="submit" class="w-full py-3.5 rounded-xl font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition">
+          교사 전면 판정판으로 진입
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- FINAL VICTORY MODAL -->
+  <div id="modalVictory" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4">
+    <canvas id="confettiCanvas" class="absolute inset-0 pointer-events-none z-0 w-full h-full"></canvas>
+    <div class="relative z-10 w-full max-w-lg bg-slate-900 border border-amber-500/30 rounded-3xl p-6 shadow-2xl shadow-amber-500/10 space-y-5 text-center">
+      <div class="space-y-2">
+        <div class="inline-flex p-4 bg-gradient-to-tr from-amber-500 to-yellow-300 rounded-full shadow-lg shadow-amber-500/30 animate-bounce">
+          <i data-lucide="trophy" class="w-10 h-10 text-slate-950"></i>
+        </div>
+        <h2 class="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-500">
+          최종 영토 점령 시상식
+        </h2>
+        <p class="text-xs text-slate-400">5라운드 수학적 협동 탐구 최종 결과 발표</p>
+      </div>
+
+      <div id="podiumContainer" class="grid grid-cols-3 gap-2 items-end pt-4 pb-2"></div>
+
+      <div class="grid grid-cols-2 gap-2 pt-2">
+        <button onclick="openGalleryModal()" class="py-3 rounded-xl font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-lg transition flex items-center justify-center space-x-1.5">
+          <i data-lucide="layout-grid" class="w-4 h-4"></i>
+          <span>학습 결과 갤러리 보기</span>
+        </button>
+        <button onclick="closeVictoryModal()" class="py-3 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+          창 닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVITY GALLERY & REPORT MODAL -->
+  <div id="modalGallery" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto">
+    <div class="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6 my-auto max-h-[92vh] flex flex-col">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 flex-shrink-0">
+        <div class="flex items-center space-x-3">
+          <div class="p-2.5 bg-amber-500/20 rounded-xl text-amber-400">
+            <i data-lucide="layout-grid" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h2 class="text-xl font-black text-slate-100">수업 활동 리포트 & 도형 스냅샷 갤러리</h2>
+            <p class="text-xs text-slate-400">1~5라운드 동안 각 모둠이 제출한 기하학적 형태를 한눈에 복습합니다. 카드를 클릭하면 대형 확대 피드백 창이 열립니다.</p>
+          </div>
+        </div>
+        <button onclick="closeGalleryModal()" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800 flex-shrink-0 overflow-x-auto text-xs font-bold">
+        <button onclick="renderGalleryCards(1)" id="tabGalleryR1" class="px-3.5 py-2 rounded-xl bg-indigo-600 text-white transition whitespace-nowrap">1R: 원주각 60°</button>
+        <button onclick="renderGalleryCards(2)" id="tabGalleryR2" class="px-3.5 py-2 rounded-xl text-slate-400 hover:text-slate-200 transition whitespace-nowrap">2R: 원주각 90°(지름)</button>
+        <button onclick="renderGalleryCards(3)" id="tabGalleryR3" class="px-3.5 py-2 rounded-xl text-slate-400 hover:text-slate-200 transition whitespace-nowrap">3R: 원주각 45°</button>
+        <button onclick="renderGalleryCards(4)" id="tabGalleryR4" class="px-3.5 py-2 rounded-xl text-slate-400 hover:text-slate-200 transition whitespace-nowrap">4R: 내접사각형 80°</button>
+        <button onclick="renderGalleryCards(5)" id="tabGalleryR5" class="px-3.5 py-2 rounded-xl text-slate-400 hover:text-slate-200 transition whitespace-nowrap">5R: 접선과 현 70°</button>
+      </div>
+
+      <div id="galleryCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 overflow-y-auto flex-1 p-1">
+      </div>
+    </div>
+  </div>
+
+  <!-- LARGE SNAPSHOT DETAIL VIEW MODAL (FOR BEAM PROJECTOR FEEDBACK) -->
+  <div id="modalDetailSnapshot" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-2xl flex items-center justify-center p-4">
+    <div class="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div class="flex items-center space-x-2">
+          <span id="detailGroupBadge" class="w-3.5 h-3.5 rounded-full"></span>
+          <h3 id="detailGroupTitle" class="text-base font-extrabold text-slate-100">1조 스냅샷 피드백</h3>
+        </div>
+        <button onclick="closeDetailSnapshotModal()" class="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <canvas id="detailCanvas" width="360" height="360" class="w-full aspect-square bg-slate-950 rounded-2xl border border-slate-800 mx-auto shadow-inner"></canvas>
+      <p id="detailDescText" class="text-xs text-slate-300 font-mono bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 leading-relaxed"></p>
+      <button onclick="closeDetailSnapshotModal()" class="w-full py-2.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition text-xs">
+        확대 창 닫기
+      </button>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    /* ==========================================================
+       🔥 FIREBASE INITIALIZATION (USER's REAL CONFIGURATION)
+       ========================================================== */
+    const firebaseConfig = {
+      apiKey: "AIzaSyChxrOzoTxFMy_BvkvNZLXAp1oRvN7Fb1g",
+      authDomain: "focus-tower-defense.firebaseapp.com",
+      projectId: "focus-tower-defense",
+      storageBucket: "focus-tower-defense.firebasestorage.app",
+      messagingSenderId: "519329169002",
+      appId: "1:519329169002:web:401534fe04b6ad39131413",
+      measurementId: "G-G2JRKQ2KXY"
+    };
+
+    let fbApp = null;
+    let fbDB = null;
+    try {
+      fbApp = firebase.initializeApp(firebaseConfig);
+      fbDB = firebase.database();
+      const analytics = firebase.analytics();
+    } catch(e) {
+      console.warn("Firebase Init fallback/warning:", e);
+      if (firebase.apps && firebase.apps.length > 0) {
+        fbApp = firebase.apps[0];
+        fbDB = firebase.database();
+      }
+    }
+
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    let localChannel = null;
+    const clientId = 'client_' + Math.random().toString(36).substring(2, 9);
+    let draggingPoint = null;
+    let lastBroadcastTime = 0;
+    const THROTTLE_INTERVAL_MS = 35; // 초당 최대 28프레임 전송 (학내망 트래픽 85% 절감 및 부드러운 반응)
+
+    // 💡 교사 전용 2분 타이머 상태 변수
+    let teacherTimerInterval = null;
+    let teacherTimerLeft = 120; // 2분 = 120초
+    let isTeacherTimerRunning = false;
+
+    function updateTeacherTimerDisplay() {
+      const display = document.getElementById('teacherTimerDisplay');
+      if (!display) return;
+      const mins = Math.floor(teacherTimerLeft / 60);
+      const secs = teacherTimerLeft % 60;
+      display.innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function toggleTeacherTimer() {
+      const btn = document.getElementById('btnTeacherTimerStart');
+      if (isTeacherTimerRunning) {
+        clearInterval(teacherTimerInterval);
+        teacherTimerInterval = null;
+        isTeacherTimerRunning = false;
+        if (btn) btn.innerText = '시작';
+      } else {
+        if (teacherTimerLeft <= 0) teacherTimerLeft = 120;
+        isTeacherTimerRunning = true;
+        if (btn) btn.innerText = '일시정지';
+
+        teacherTimerInterval = setInterval(() => {
+          if (teacherTimerLeft > 0) {
+            teacherTimerLeft--;
+            updateTeacherTimerDisplay();
+          } else {
+            clearInterval(teacherTimerInterval);
+            teacherTimerInterval = null;
+            isTeacherTimerRunning = false;
+            if (btn) btn.innerText = '시작';
+            playSound('pop');
+            showToast('⏰ 2분 제한 시간이 종료되었습니다!', 'info');
+          }
+        }, 1000);
+      }
+    }
+
+    function resetTeacherTimer() {
+      if (teacherTimerInterval) {
+        clearInterval(teacherTimerInterval);
+        teacherTimerInterval = null;
+      }
+      isTeacherTimerRunning = false;
+      teacherTimerLeft = 120;
+      updateTeacherTimerDisplay();
+      const btn = document.getElementById('btnTeacherTimerStart');
+      if (btn) btn.innerText = '시작';
+    }
+
+    function normRad(rad) {
+      rad = rad % (2 * Math.PI);
+      if (rad < 0) rad += 2 * Math.PI;
+      return rad;
+    }
+
+    function getShortestCentralAngle(ang1, ang2) {
+      let diff = Math.abs(normRad(ang1) - normRad(ang2));
+      if (diff > Math.PI) diff = 2 * Math.PI - diff;
+      return diff;
+    }
+
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      if (!container) return;
+      const el = document.createElement('div');
+      el.className = `px-4 py-2 rounded-xl text-xs font-semibold shadow-2xl transition-all duration-300 transform translate-y-2 opacity-0 ${
+        type === 'error' ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white'
+      }`;
+      el.innerText = msg;
+      container.appendChild(el);
+      setTimeout(() => { el.classList.remove('translate-y-2', 'opacity-0'); }, 10);
+      setTimeout(() => {
+        el.classList.add('opacity-0');
+        setTimeout(() => el.remove(), 300);
+      }, 2500);
+    }
+
+    function playSound(type) {
+      try {
+        if (!audioCtx) audioCtx = new AudioCtx();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const now = audioCtx.currentTime;
+        if (type === 'pop') {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(400, now);
+          osc.frequency.exponentialRampToValueAtTime(800, now + 0.08);
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.08);
+        } else if (type === 'error') {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(200, now);
+          osc.frequency.setValueAtTime(140, now + 0.1);
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.25);
+        } else if (type === 'battle') {
+          [180, 120, 80].forEach((freq, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, now + i * 0.05);
+            osc.frequency.linearRampToValueAtTime(25, now + i * 0.05 + 0.6);
+            gain.gain.setValueAtTime(0.7, now + i * 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.6);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now + i * 0.05);
+            osc.stop(now + i * 0.05 + 0.6);
+          });
+        } else if (type === 'spark') {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(600 + Math.random() * 400, now);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.05);
+        } else if (type === 'victory') {
+          [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.12);
+            gain.gain.setValueAtTime(0.35, now + idx * 0.12);
+            gain.gain.linearRampToValueAtTime(0.01, now + idx * 0.12 + 0.35);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now + idx * 0.12);
+            osc.stop(now + idx * 0.12 + 0.35);
+          });
+        }
+      } catch (e) {
+        console.warn('Audio play error:', e);
+      }
+    }
+
+    const state = {
+      isTeacher: false,
+      roomCode: 'CLASS1',
+      stage: 1,
+      currentRound: 1,
+      myGroup: 1,
+      myRole: 'A',
+      targetAngle: 60,
+      showOverlay: true,
+      showSector: false,
+      battleExecuted: false,
+      territoriesRevealed: false,
+      goldenArcActive: false,
+      goldenArc: { start: 0, end: Math.PI / 3 },
+
+      points: {
+        A: 0.2 * Math.PI,
+        B: 0.866 * Math.PI,
+        C: 1.25 * Math.PI,
+        D: 1.65 * Math.PI,
+        P: 1.4 * Math.PI,
+        Q: 1.8 * Math.PI
+      },
+
+      submissions: {},
+      exclusiveSegments: [],
+      overlappingSegments: [],
+      scores: { 
+        1: { r1:0, r2:0, r3:0, r4:0, r5:0 }, 
+        2: { r1:0, r2:0, r3:0, r4:0, r5:0 }, 
+        3: { r1:0, r2:0, r3:0, r4:0, r5:0 }, 
+        4: { r1:0, r2:0, r3:0, r4:0, r5:0 }, 
+        5: { r1:0, r2:0, r3:0, r4:0, r5:0 } 
+      },
+
+      roundSnapshots: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} },
+
+      isBattleAnimating: false,
+      battleAnimProgress: 0,
+      battleParticles: []
+    };
+
+    const activePresence = {};
+    let confettiParticles = [];
+    let fireworkParticles = [];
+    let isConfettiActive = false;
+
+    const groupNames = { 1: '1조 (파랑)', 2: '2조 (초록)', 3: '3조 (주황)', 4: '4조 (분홍)', 5: '5조 (보라)' };
+    const groupColors = { 1: '#3b82f6', 2: '#10b981', 3: '#f97316', 4: '#ec4899', 5: '#a855f7' };
+
+    const canvas = document.getElementById('geoCanvas');
+    const ctx = canvas.getContext('2d');
+    const circleCenter = { x: 300, y: 260 };
+    const circleRadius = 160;
+
+    function resetPointsForRound(roundNum) {
+      if (roundNum === 1) {
+        state.stage = 1;
+        state.targetAngle = 60;
+        state.points = { A: 0.2 * Math.PI, B: 0.866 * Math.PI, P: 1.4 * Math.PI, Q: 1.8 * Math.PI, C: 1.25 * Math.PI, D: 1.65 * Math.PI };
+      } else if (roundNum === 2) {
+        state.stage = 1;
+        state.targetAngle = 90;
+        state.points = { A: 0.0 * Math.PI, B: 1.0 * Math.PI, P: 1.5 * Math.PI, Q: 1.8 * Math.PI, C: 1.25 * Math.PI, D: 1.65 * Math.PI };
+      } else if (roundNum === 3) {
+        state.stage = 1;
+        state.targetAngle = 45;
+        state.points = { A: 0.2 * Math.PI, B: 0.7 * Math.PI, P: 1.35 * Math.PI, Q: 1.75 * Math.PI, C: 1.25 * Math.PI, D: 1.65 * Math.PI };
+      } else if (roundNum === 4) {
+        state.stage = 2;
+        state.targetAngle = 80;
+        state.points = { A: 0.15 * Math.PI, B: 0.65 * Math.PI, C: 1.15 * Math.PI, D: 1.65 * Math.PI, P: 1.35 * Math.PI, Q: 1.75 * Math.PI };
+      } else if (roundNum === 5) {
+        state.stage = 3;
+        state.targetAngle = 70;
+        state.points = { A: 0.5 * Math.PI, B: 0.05 * Math.PI, C: 1.25 * Math.PI, D: 1.65 * Math.PI, P: 1.25 * Math.PI, Q: 1.65 * Math.PI };
+      }
+    }
+
+    function changeRoomCode() {
+      const roomInput = document.getElementById('inputRoomCode');
+      if (!roomInput) return;
+      const newRoom = roomInput.value.trim().toUpperCase() || 'CLASS1';
+      if (newRoom === state.roomCode) return;
+
+      state.roomCode = newRoom;
+      Object.keys(activePresence).forEach(k => delete activePresence[k]);
+
+      if (localChannel) {
+        try { localChannel.close(); } catch(e){}
+        localChannel = null;
+      }
+
+      initSyncNetwork();
+      updateRoleOptionsForRound();
+    }
+
+    /* ==========================================================
+       🔥 REALTIME FIREBASE DB & ROOM ISOLATION ENGINE
+       ========================================================== */
+    function getRoomRef(subPath = '') {
+      const cleanRoom = (state.roomCode || 'CLASS1').replace(/[.#$\[\]]/g, '_');
+      const basePath = `circle_mania/rooms/${cleanRoom}`;
+      return fbDB ? fbDB.ref(subPath ? `${basePath}/${subPath}` : basePath) : null;
+    }
+
+    function initSyncNetwork() {
+      const roomInput = document.getElementById('inputRoomCode');
+      if (roomInput && roomInput.value) {
+        state.roomCode = roomInput.value.trim().toUpperCase() || 'CLASS1';
+      }
+
+      // 로컬 브라우저 탭 간 BroadcastChannel
+      try {
+        if (window.BroadcastChannel) {
+          if (localChannel) localChannel.close();
+          localChannel = new BroadcastChannel('circle_mania_channel_' + state.roomCode);
+          localChannel.onmessage = (event) => handleIncomingSyncMsg(event.data);
+        }
+      } catch (e) {
+        console.warn('BroadcastChannel error:', e);
+      }
+
+      // Firebase Realtime DB 구독 설정
+      if (fbDB) {
+        const roomRef = getRoomRef();
+        if (roomRef) {
+          // 실시간 연결 상태 표시
+          fbDB.ref('.info/connected').on('value', (snap) => {
+            const badge = document.getElementById('syncStatusText');
+            if (badge) {
+              badge.innerText = snap.val() ? 'Firebase 실시간 연동 완료' : '연결 재시도 중...';
+            }
+          });
+
+          // 1. 교사 메인 제어 상태 동기화 (Teacher State)
+          roomRef.child('meta').on('value', (snap) => {
+            const val = snap.val();
+            if (!val) return;
+            if (val.sender === clientId) return;
+
+            if (typeof val.currentRound === 'number' && val.currentRound !== state.currentRound) {
+              state.currentRound = val.currentRound;
+              resetPointsForRound(state.currentRound);
+              document.getElementById('roundBadgeText').innerText = `라운드 ${state.currentRound} / 5`;
+              updateStageHeaderUI();
+              renderCanvas();
+            }
+            if (typeof val.territoriesRevealed !== 'undefined') {
+              state.territoriesRevealed = val.territoriesRevealed;
+            }
+            if (typeof val.goldenArcActive !== 'undefined') {
+              state.goldenArcActive = val.goldenArcActive;
+              const btnGold = document.getElementById('btnToggleGoldenArcText');
+              if (btnGold) btnGold.innerText = state.goldenArcActive ? '황금영토 끄기' : '황금영토 켜기';
+            }
+            if (typeof val.showSector !== 'undefined') {
+              state.showSector = val.showSector;
+            }
+            if (val.scores) state.scores = val.scores;
+            if (val.roundSnapshots) state.roundSnapshots = val.roundSnapshots;
+
+            updateScoreboardUI();
+            renderCanvas();
+          });
+
+          // 2. 모둠별 점 좌표 동기화 (Points by Group)
+          roomRef.child('points').on('value', (snap) => {
+            const val = snap.val();
+            if (!val) return;
+            // 학생은 자기 조의 점만 실시간 반영, 교사는 모든 조/선택 점 반영
+            if (!state.isTeacher) {
+              const myGroupPoints = val[state.myGroup];
+              if (myGroupPoints && myGroupPoints.sender !== clientId) {
+                Object.assign(state.points, myGroupPoints.coords);
+                renderCanvas();
+              }
+            } else {
+              // 교사용 화면: 현재 보고 있는 모둠이나 기본 점 갱신
+              const teacherGroupPts = val[state.myGroup] || val[1];
+              if (teacherGroupPts && teacherGroupPts.sender !== clientId && !state.battleExecuted) {
+                Object.assign(state.points, teacherGroupPts.coords);
+                renderCanvas();
+              }
+            }
+          });
+
+          // 3. 영토 제출 동기화 (Submissions)
+          roomRef.child('submissions').on('value', (snap) => {
+            const val = snap.val();
+            state.submissions = val || {};
+            updateScoreboardUI();
+            renderCanvas();
+          });
+
+          // 4. 배틀 애니메이션 실행 트리거 (Battle Trigger)
+          roomRef.child('battleEvent').on('value', (snap) => {
+            const val = snap.val();
+            if (!val || val.sender === clientId) return;
+            if (val.scores) state.scores = val.scores;
+            if (val.exclusiveSegments) state.exclusiveSegments = val.exclusiveSegments;
+            if (val.overlappingSegments) state.overlappingSegments = val.overlappingSegments;
+            if (val.submissions) state.submissions = val.submissions;
+            runTerritoryBattleAnimation(false);
+          });
+
+          // 5. 학생 참가자 Presence (하트비트)
+          roomRef.child('presence').on('value', (snap) => {
+            const val = snap.val();
+            if (!val) return;
+            Object.assign(activePresence, val);
+            updateRoleOptionsForRound();
+          });
+        }
+      }
+
+      // 주기적 하트비트
+      setInterval(() => {
+        if (!state.isTeacher && state.myGroup && state.myRole && fbDB) {
+          const pRef = getRoomRef(`presence/${clientId}`);
+          if (pRef) {
+            pRef.set({
+              room: state.roomCode,
+              group: state.myGroup,
+              role: state.myRole,
+              lastPing: Date.now()
+            });
+            pRef.onDisconnect().remove();
+          }
+        }
+      }, 3000);
+    }
+
+    function broadcastSync(action, data = {}, forceImmediate = false) {
+      const now = performance.now();
+      if (!forceImmediate && action === 'POINT_MOVE' && (now - lastBroadcastTime < THROTTLE_INTERVAL_MS)) {
+        return; // 과도한 네트워크 전송을 방지하는 스마트 쓰로틀링
+      }
+      lastBroadcastTime = now;
+
+      const packet = {
+        sender: clientId,
+        room: state.roomCode,
+        group: state.myGroup,
+        round: state.currentRound,
+        action: action,
+        data: data
+      };
+
+      // 1. BroadcastChannel (동일 기기 초고속 로컬 전송)
+      if (localChannel) localChannel.postMessage(packet);
+
+      // 2. Firebase Realtime Database 업데이트
+      if (fbDB) {
+        const roomRef = getRoomRef();
+        if (!roomRef) return;
+
+        if (action === 'POINT_MOVE') {
+          roomRef.child(`points/${state.myGroup}`).set({
+            sender: clientId,
+            coords: state.points,
+            updatedAt: firebase.database.ServerValue.TIMESTAMP
+          });
+        } else if (action === 'SUBMIT_TERRITORY') {
+          roomRef.child(`submissions/${data.group}`).set(data.submission);
+        } else if (action === 'TEACHER_META') {
+          roomRef.child('meta').update(data);
+        } else if (action === 'RUN_BATTLE') {
+          roomRef.child('battleEvent').set({
+            sender: clientId,
+            timestamp: Date.now(),
+            scores: data.scores,
+            exclusiveSegments: data.exclusiveSegments,
+            overlappingSegments: data.overlappingSegments,
+            submissions: data.submissions
+          });
+          roomRef.child('meta').update({
+            scores: data.scores,
+            roundSnapshots: data.roundSnapshots,
+            territoriesRevealed: true
+          });
+        }
+      }
+    }
+
+    function handleIncomingSyncMsg(msg) {
+      if (!msg || msg.room !== state.roomCode) return;
+
+      if (msg.action === 'POINT_MOVE') {
+        const isSameGroupStudent = (!state.isTeacher && msg.group === state.myGroup && msg.round === state.currentRound);
+        const isTeacherScreen = state.isTeacher;
+
+        if ((isSameGroupStudent || isTeacherScreen) && msg.data && msg.data.points) {
+          Object.assign(state.points, msg.data.points);
+          renderCanvas();
+        }
+      } else if (msg.action === 'SUBMIT_TERRITORY') {
+        if (msg.data && msg.data.group && msg.data.submission) {
+          state.submissions[msg.data.group] = msg.data.submission;
+          updateScoreboardUI();
+          renderCanvas();
+        }
+      } else if (msg.action === 'REVEAL_TERRITORIES') {
+        state.territoriesRevealed = true;
+        renderCanvas();
+        showToast('👀 모든 모둠의 제출 영토가 화면에 공개되었습니다!', 'info');
+      } else if (msg.action === 'TOGGLE_GOLDEN_ARC') {
+        if (typeof msg.data.active !== 'undefined') {
+          state.goldenArcActive = msg.data.active;
+          const btnGold = document.getElementById('btnToggleGoldenArcText');
+          if (btnGold) btnGold.innerText = state.goldenArcActive ? '황금영토 끄기' : '황금영토 켜기';
+          renderCanvas();
+        }
+      } else if (msg.action === 'TOGGLE_SECTOR') {
+        if (typeof msg.data.show !== 'undefined') {
+          state.showSector = msg.data.show;
+          renderCanvas();
+        }
+      } else if (msg.action === 'RUN_BATTLE') {
+        if (msg.data) {
+          if (msg.data.submissions) state.submissions = msg.data.submissions;
+          if (msg.data.scores) state.scores = msg.data.scores;
+          if (msg.data.roundSnapshots) state.roundSnapshots = msg.data.roundSnapshots;
+          if (msg.data.exclusiveSegments) state.exclusiveSegments = msg.data.exclusiveSegments;
+          if (msg.data.overlappingSegments) state.overlappingSegments = msg.data.overlappingSegments;
+        }
+        runTerritoryBattleAnimation(false);
+      }
+    }
+
+    function updateStageHeaderUI() {
+      const badge = document.getElementById('stageBadge');
+      const title = document.getElementById('stageGoalTitle');
+      const desc = document.getElementById('stageGoalDesc');
+      const targetDisp = document.getElementById('targetAngleDisplay');
+
+      badge.innerText = `라운드 ${state.currentRound} / 5`;
+
+      if (state.currentRound === 1) {
+        title.innerText = '1라운드: 원주각 60°';
+        desc.innerHTML = '💡 <strong>수학 미션:</strong> 원주각 ∠APB = 60° | 🛡️ <strong>영토 전략:</strong> 우리 조의 영토인 [점 A ~ 점 B] 사이의 호 구역을 다른 조와 안 겹치게 차지하세요!';
+        targetDisp.innerText = `목표 원주각 = 60°`;
+      } else if (state.currentRound === 2) {
+        title.innerText = '2라운드: 원주각 90° [지름 특별 미션]';
+        desc.innerHTML = '🌟 <strong>지름 특별 미션:</strong> 원주각 = 90°! 점 A와 B가 원 중심 O를 지나도록 <strong>지름</strong>을 만드세요!';
+        targetDisp.innerText = `목표 원주각 = 90°`;
+      } else if (state.currentRound === 3) {
+        title.innerText = '3라운드: 원주각 45°';
+        desc.innerHTML = '💡 <strong>수학 미션:</strong> 원주각 ∠APB = 45° | 🛡️ <strong>영토 전략:</strong> [점 A ~ 점 B] 사이의 호 구역을 다른 조와 안 겹치게 차지하세요!';
+        targetDisp.innerText = `목표 원주각 = 45°`;
+      } else if (state.currentRound === 4) {
+        title.innerText = '4라운드: 원에 내접하는 사각형 ∠A = 80°';
+        desc.innerHTML = '💡 <strong>수학 미션:</strong> 마주보는 대각의 합 = 180° 및 ∠A = 80° | 🛡️ <strong>영토 전략:</strong> [점 A ~ 점 B] 사이의 호 구역을 차지하세요!';
+        targetDisp.innerText = `목표 ∠A = 80° (대각 180°)`;
+      } else if (state.currentRound === 5) {
+        title.innerText = '5라운드: 접선과 현이 이루는 각 70°';
+        desc.innerHTML = '💡 <strong>수학 미션:</strong> 접선과 현이 이루는 각 = 70° (원주각 ∠C = 70°) | 🛡️ <strong>영토 전략:</strong> [점 A ~ 점 B] 사이의 호 구역을 차지하세요!';
+        targetDisp.innerText = `목표 접선각 = 70°`;
+      }
+
+      if (!state.isTeacher) {
+        const badgeElem = document.getElementById('roleBadgeText');
+        if (badgeElem) badgeElem.innerText = `내 담당: 점 ${state.myRole}`;
+      }
+    }
+
+    function getPointCoords(angle) {
+      if (typeof angle !== 'number' || isNaN(angle)) angle = 0;
+      return {
+        x: circleCenter.x + circleRadius * Math.cos(angle),
+        y: circleCenter.y + circleRadius * Math.sin(angle)
+      };
+    }
+
+    function getVertexAngleDegrees(V, A, B) {
+      const v1 = { x: A.x - V.x, y: A.y - V.y };
+      const v2 = { x: B.x - V.x, y: B.y - V.y };
+      const dot = v1.x * v2.x + v1.y * v2.y;
+      const mag1 = Math.hypot(v1.x, v1.y);
+      const mag2 = Math.hypot(v2.x, v2.y);
+      if (mag1 === 0 || mag2 === 0) return 0;
+      let cosTheta = dot / (mag1 * mag2);
+      cosTheta = Math.max(-1, Math.min(1, cosTheta));
+      return Math.round((Math.acos(cosTheta) * 180) / Math.PI);
+    }
+
+    function drawAngleArcLabel(V, A, B, labelText, color, arcRadius = 24) {
+      const angA = Math.atan2(A.y - V.y, A.x - V.x);
+      const angB = Math.atan2(B.y - V.y, B.x - V.x);
+      let start = angA, end = angB;
+      let diff = end - start;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      if (diff < 0) { start = angB; end = angA; }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(V.x, V.y, arcRadius, start, end, false);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      const midAng = (start + end) / 2;
+      const labelRadius = arcRadius + 18;
+      const lx = V.x + labelRadius * Math.cos(midAng);
+      const ly = V.y + labelRadius * Math.sin(midAng);
+
+      ctx.font = 'bold 11px Pretendard';
+      const textWidth = ctx.measureText(labelText).width;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.beginPath();
+      ctx.roundRect(lx - textWidth / 2 - 5, ly - 9, textWidth + 10, 18, 5);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelText, lx, ly);
+      ctx.restore();
+    }
+
+    function drawGoldenArc() {
+      if (!state.goldenArcActive) return;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(circleCenter.x, circleCenter.y, circleRadius, state.goldenArc.start, state.goldenArc.end, false);
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
+      ctx.lineWidth = 20;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(circleCenter.x, circleCenter.y, circleRadius + 10, state.goldenArc.start, state.goldenArc.end, false);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([5, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.beginPath();
+      ctx.moveTo(circleCenter.x, circleCenter.y);
+      ctx.arc(circleCenter.x, circleCenter.y, circleRadius, state.goldenArc.start, state.goldenArc.end, false);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.08)';
+      ctx.fill();
+
+      const midAng = (state.goldenArc.start + state.goldenArc.end) / 2;
+      const lx = circleCenter.x + (circleRadius + 38) * Math.cos(midAng);
+      const ly = circleCenter.y + (circleRadius + 38) * Math.sin(midAng);
+
+      ctx.font = 'bold 11px Pretendard';
+      const text = '👑 황금영토 (2배 점수!)';
+      const tw = ctx.measureText(text).width;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.beginPath();
+      ctx.roundRect(lx - tw/2 - 6, ly - 10, tw + 12, 20, 6);
+      ctx.fill();
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#fbbf24';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, lx, ly);
+
+      ctx.restore();
+    }
+
+    function toggleCentralAngleSector() {
+      state.showSector = !state.showSector;
+      const btnText = document.getElementById('btnToggleSectorText');
+      if (btnText) {
+        btnText.innerText = state.showSector ? '부채꼴 끄기' : '중심각 부채꼴';
+      }
+      renderCanvas();
+      broadcastSync('TEACHER_META', { showSector: state.showSector }, true);
+      broadcastSync('TOGGLE_SECTOR', { show: state.showSector });
+    }
+
+    function drawStage1() {
+      const pA = getPointCoords(state.points.A);
+      const pB = getPointCoords(state.points.B);
+      const pP = getPointCoords(state.points.P);
+      const pQ = getPointCoords(state.points.Q);
+      const O = circleCenter;
+
+      if (state.showSector) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(O.x, O.y);
+        ctx.arc(O.x, O.y, circleRadius, state.points.A, state.points.B, false);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      ctx.beginPath();
+      ctx.arc(circleCenter.x, circleCenter.y, circleRadius, state.points.A, state.points.B, false);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 8;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y);
+      ctx.lineTo(O.x, O.y);
+      ctx.lineTo(pB.x, pB.y);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (state.targetAngle === 90) {
+        ctx.beginPath();
+        ctx.moveTo(pA.x, pA.y);
+        ctx.lineTo(pB.x, pB.y);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y);
+      ctx.lineTo(pP.x, pP.y);
+      ctx.lineTo(pB.x, pB.y);
+      ctx.strokeStyle = '#60a5fa';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y);
+      ctx.lineTo(pQ.x, pQ.y);
+      ctx.lineTo(pB.x, pB.y);
+      ctx.strokeStyle = '#818cf8';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.beginPath();
+      ctx.arc(O.x, O.y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fill();
+
+      const centralRad = getShortestCentralAngle(state.points.A, state.points.B);
+      const measuredCentral = Math.round((centralRad * 180) / Math.PI);
+      const measuredInscribed = Math.round(measuredCentral / 2);
+
+      drawAngleArcLabel(pP, pA, pB, `∠P=${measuredInscribed}°`, '#60a5fa', 22);
+      drawAngleArcLabel(pQ, pA, pB, `∠Q=${measuredInscribed}°`, '#818cf8', 22);
+      drawAngleArcLabel(O, pA, pB, `중심각=${measuredCentral}°`, '#f59e0b', 26);
+
+      document.getElementById('liveHudText').innerText = `원주각 ∠APB = ${measuredInscribed}° | 중심각 = ${measuredCentral}° (목표: ${state.targetAngle}°)`;
+    }
+
+    function drawStage2() {
+      const pA = getPointCoords(state.points.A);
+      const pB = getPointCoords(state.points.B);
+      const pC = getPointCoords(state.points.C);
+      const pD = getPointCoords(state.points.D);
+
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y);
+      ctx.lineTo(pB.x, pB.y);
+      ctx.lineTo(pC.x, pC.y);
+      ctx.lineTo(pD.x, pD.y);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+      ctx.fill();
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      const angA = getVertexAngleDegrees(pA, pD, pB);
+      const angB = getVertexAngleDegrees(pB, pA, pC);
+      const angC = getVertexAngleDegrees(pC, pB, pD);
+      const angD = getVertexAngleDegrees(pD, pC, pA);
+
+      drawAngleArcLabel(pA, pD, pB, `∠A=${angA}°`, '#38bdf8', 22);
+      drawAngleArcLabel(pC, pB, pD, `∠C=${angC}°`, '#38bdf8', 22);
+      drawAngleArcLabel(pB, pA, pC, `∠B=${angB}°`, '#f59e0b', 22);
+      drawAngleArcLabel(pD, pC, pA, `∠D=${angD}°`, '#f59e0b', 22);
+
+      document.getElementById('liveHudText').innerText = `∠A(${angA}°) + ∠C(${angC}°) = ${angA + angC}°  |  목표 ∠A = 80°`;
+    }
+
+    function drawStage3() {
+      const pA = getPointCoords(state.points.A);
+      const pB = getPointCoords(state.points.B);
+      const pC = getPointCoords(state.points.C);
+      const pD = getPointCoords(state.points.D);
+
+      const tangentAngle = state.points.A + Math.PI / 2;
+      const tan1 = { x: pA.x + 140 * Math.cos(tangentAngle), y: pA.y + 140 * Math.sin(tangentAngle) };
+      const tan2 = { x: pA.x - 140 * Math.cos(tangentAngle), y: pA.y - 140 * Math.sin(tangentAngle) };
+
+      ctx.beginPath();
+      ctx.moveTo(tan1.x, tan1.y);
+      ctx.lineTo(tan2.x, tan2.y);
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y);
+      ctx.lineTo(pB.x, pB.y);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y);
+      ctx.lineTo(pC.x, pC.y);
+      ctx.lineTo(pB.x, pB.y);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(pA.x, pA.y);
+      ctx.lineTo(pD.x, pD.y);
+      ctx.lineTo(pB.x, pB.y);
+      ctx.strokeStyle = '#818cf8';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const chordArc = getShortestCentralAngle(state.points.A, state.points.B);
+      const measuredTan = Math.round((chordArc * 180 / Math.PI) / 2);
+
+      drawAngleArcLabel(pA, tan1, pB, `접선각=${measuredTan}°`, '#ef4444', 24);
+      drawAngleArcLabel(pC, pA, pB, `원주각C=${measuredTan}°`, '#38bdf8', 22);
+
+      document.getElementById('liveHudText').innerText = `접선과 현이 이루는 각 = ${measuredTan}° | 원주각 ∠C = ${measuredTan}° (목표: 70°)`;
+    }
+
+    function drawPoints() {
+      const keys = (state.stage === 1) ? ['A', 'B', 'P', 'Q'] : ['A', 'B', 'C', 'D'];
+      const myActualKey = state.myRole;
+
+      keys.forEach(key => {
+        if (typeof state.points[key] === 'undefined') return;
+        const pt = getPointCoords(state.points[key]);
+        const isMyPoint = state.isTeacher || (key === myActualKey);
+
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, isMyPoint ? 12 : 8, 0, 2 * Math.PI);
+        ctx.fillStyle = isMyPoint ? '#ec4899' : '#38bdf8';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.font = 'bold 12px Pretendard';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(key, pt.x, pt.y - 15);
+      });
+    }
+
+    function triggerSparksAtSegment(seg) {
+      const colors = ['#ff2200', '#ffaa00', '#ffea00', '#ffffff', '#ff0055'];
+      let midAng = (seg.start + seg.end) / 2;
+      const ox = circleCenter.x + circleRadius * Math.cos(midAng);
+      const oy = circleCenter.y + circleRadius * Math.sin(midAng);
+
+      for (let i = 0; i < 8; i++) {
+        const spread = midAng + (Math.random() - 0.5) * 2;
+        const spd = 2 + Math.random() * 6;
+        state.battleParticles.push({
+          x: ox,
+          y: oy,
+          vx: Math.cos(spread) * spd,
+          vy: Math.sin(spread) * spd,
+          size: 3 + Math.random() * 6,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          life: 1.0,
+          decay: 0.04 + Math.random() * 0.03
+        });
+      }
+      playSound('spark');
+    }
+
+    function renderSlowMotionBattleReplay() {
+      if (!state.isBattleAnimating) return;
+      const progress = state.battleAnimProgress;
+
+      if (progress <= 1.5) {
+        const drawPhase = progress / 1.5;
+        Object.keys(state.submissions).forEach((gId, idx) => {
+          const sub = state.submissions[gId];
+          const groupDelay = idx * 0.12;
+          const groupProgress = Math.max(0, Math.min(1, (drawPhase - groupDelay) / 0.45));
+
+          if (groupProgress > 0) {
+            const start = sub.start;
+            let totalSpan = normRad(sub.end - sub.start);
+            if (totalSpan < 0.001) totalSpan = 2 * Math.PI;
+            const curEnd = start + totalSpan * groupProgress;
+
+            const ringOffset = (parseInt(gId) - 3) * 6;
+            ctx.beginPath();
+            ctx.arc(circleCenter.x, circleCenter.y, circleRadius + ringOffset, start, curEnd, false);
+            ctx.strokeStyle = groupColors[gId];
+            ctx.lineWidth = 8;
+            ctx.stroke();
+          }
+        });
+      }
+
+      if (progress > 1.5 && progress <= 2.5) {
+        const clashPhase = (progress - 1.5) / 1.0;
+
+        Object.keys(state.submissions).forEach(gId => {
+          const sub = state.submissions[gId];
+          const ringOffset = (parseInt(gId) - 3) * 6;
+          ctx.beginPath();
+          ctx.arc(circleCenter.x, circleCenter.y, circleRadius + ringOffset, sub.start, sub.end, false);
+          ctx.strokeStyle = groupColors[gId];
+          ctx.lineWidth = 6;
+          ctx.globalAlpha = 0.4;
+          ctx.stroke();
+          ctx.globalAlpha = 1.0;
+        });
+
+        state.overlappingSegments.forEach(seg => {
+          ctx.beginPath();
+          ctx.arc(circleCenter.x, circleCenter.y, circleRadius, seg.start, seg.end, false);
+          ctx.strokeStyle = (Math.sin(clashPhase * 30) > 0) ? '#ff2200' : '#ffea00';
+          ctx.lineWidth = 18 + Math.random() * 6;
+          ctx.stroke();
+
+          if (Math.random() < 0.4) {
+            triggerSparksAtSegment(seg);
+          }
+        });
+      }
+
+      if (progress > 2.5) {
+        state.exclusiveSegments.forEach(seg => {
+          ctx.beginPath();
+          ctx.arc(circleCenter.x, circleCenter.y, circleRadius, seg.start, seg.end, false);
+          ctx.strokeStyle = groupColors[seg.group];
+          ctx.lineWidth = 16;
+          ctx.stroke();
+        });
+      }
+
+      state.battleParticles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+        if (p.life > 0) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * p.life, 0, 2 * Math.PI);
+          ctx.fillStyle = p.color;
+          ctx.fill();
+        }
+      });
+
+      if (progress >= 3.0) {
+        state.isBattleAnimating = false;
+      }
+    }
+
+    function calculateExclusiveSegments() {
+      state.exclusiveSegments = [];
+      state.overlappingSegments = [];
+
+      const groupIntervals = [];
+      const breakAnglesSet = new Set();
+      breakAnglesSet.add(0);
+      breakAnglesSet.add(2 * Math.PI);
+
+      Object.keys(state.submissions).forEach(gId => {
+        const sub = state.submissions[gId];
+        let s = normRad(sub.start);
+        let e = normRad(sub.end);
+
+        if (Math.abs(s - e) < 0.001) return;
+
+        if (s < e) {
+          groupIntervals.push({ group: parseInt(gId), start: s, end: e });
+        } else {
+          groupIntervals.push({ group: parseInt(gId), start: s, end: 2 * Math.PI });
+          groupIntervals.push({ group: parseInt(gId), start: 0, end: e });
+        }
+        breakAnglesSet.add(s);
+        breakAnglesSet.add(e);
+      });
+
+      const breakAngles = Array.from(breakAnglesSet).sort((a, b) => a - b);
+
+      for (let i = 0; i < breakAngles.length - 1; i++) {
+        const a = breakAngles[i];
+        const b = breakAngles[i + 1];
+        if (b - a < 0.0005) continue;
+
+        const mid = (a + b) / 2;
+        const coveringGroups = [];
+
+        groupIntervals.forEach(inv => {
+          if (mid >= inv.start && mid <= inv.end) {
+            if (!coveringGroups.includes(inv.group)) {
+              coveringGroups.push(inv.group);
+            }
+          }
+        });
+
+        if (coveringGroups.length === 1) {
+          state.exclusiveSegments.push({
+            group: coveringGroups[0],
+            start: a,
+            end: b
+          });
+        } else if (coveringGroups.length > 1) {
+          state.overlappingSegments.push({
+            start: a,
+            end: b,
+            groups: coveringGroups
+          });
+        }
+      }
+    }
+
+    function renderCanvas() {
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(circleCenter.x, circleCenter.y, circleRadius, 0, 2 * Math.PI);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      drawGoldenArc();
+
+      if (state.isTeacher) {
+        if (state.isBattleAnimating) {
+          renderSlowMotionBattleReplay();
+        } else {
+          if (!state.battleExecuted) {
+            if (state.territoriesRevealed) {
+              Object.keys(state.submissions).forEach(gId => {
+                const sub = state.submissions[gId];
+                const ringOffset = (parseInt(gId) - 3) * 6;
+                const ringRadius = circleRadius + ringOffset;
+
+                ctx.beginPath();
+                ctx.arc(circleCenter.x, circleCenter.y, ringRadius, sub.start, sub.end, false);
+                ctx.strokeStyle = groupColors[gId];
+                ctx.lineWidth = 7;
+                ctx.globalAlpha = 0.75;
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+              });
+            }
+          } else {
+            state.exclusiveSegments.forEach(seg => {
+              ctx.beginPath();
+              ctx.arc(circleCenter.x, circleCenter.y, circleRadius, seg.start, seg.end, false);
+              ctx.strokeStyle = groupColors[seg.group];
+              ctx.lineWidth = 16;
+              ctx.shadowColor = groupColors[seg.group];
+              ctx.shadowBlur = 12;
+              ctx.stroke();
+              ctx.shadowBlur = 0;
+
+              const midAng = (seg.start + seg.end) / 2;
+              const lx = circleCenter.x + (circleRadius + 24) * Math.cos(midAng);
+              const ly = circleCenter.y + (circleRadius + 24) * Math.sin(midAng);
+
+              let isGolden = false;
+              if (state.goldenArcActive) {
+                const gStart = state.goldenArc.start;
+                const gEnd = state.goldenArc.end;
+                if (midAng >= gStart && midAng <= gEnd) isGolden = true;
+              }
+
+              ctx.font = 'bold 11px Pretendard';
+              ctx.fillStyle = groupColors[seg.group];
+              ctx.textAlign = 'center';
+              ctx.fillText(isGolden ? `👑 ${seg.group}조 황금독점(x2)!` : `🛡️ ${seg.group}조 독점!`, lx, ly);
+            });
+          }
+        }
+
+        if (state.showOverlay && !state.isBattleAnimating) {
+          if (state.stage === 1) drawStage1();
+          else if (state.stage === 2) drawStage2();
+          else if (state.stage === 3) drawStage3();
+          drawPoints();
+        }
+      } else {
+        if (state.stage === 1) drawStage1();
+        else if (state.stage === 2) drawStage2();
+        else if (state.stage === 3) drawStage3();
+        drawPoints();
+      }
+
+      ctx.restore();
+    }
+
+    function updateScoreboardUI() {
+      const container = document.getElementById('scoreboardList');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const groupSums = {};
+      for (let g = 1; g <= 5; g++) {
+        const r1 = state.scores[g].r1 || 0;
+        const r2 = state.scores[g].r2 || 0;
+        const r3 = state.scores[g].r3 || 0;
+        const r4 = state.scores[g].r4 || 0;
+        const r5 = state.scores[g].r5 || 0;
+        groupSums[g] = r1 + r2 + r3 + r4 + r5;
+      }
+
+      for (let g = 1; g <= 5; g++) {
+        const hasSubmitted = !!state.submissions[g];
+        const sum = groupSums[g];
+        const rKey = `r${state.currentRound}`;
+        const roundPts = state.scores[g][rKey] || 0;
+
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs';
+        item.innerHTML = `
+          <div class="flex items-center space-x-2.5">
+            <span class="w-3 h-3 rounded-full" style="background-color: ${groupColors[g]}"></span>
+            <span class="font-bold text-slate-200">${groupNames[g]}</span>
+          </div>
+          <div class="flex items-center space-x-3">
+            <span class="${hasSubmitted ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/30' : 'text-slate-500 bg-slate-800'} px-2 py-0.5 rounded-md text-[10px] font-semibold">
+              ${hasSubmitted ? '제출 완료' : '미제출'}
+            </span>
+            <span class="font-mono text-amber-300 font-bold">${sum} pts <span class="text-[10px] text-slate-500">(+${roundPts})</span></span>
+          </div>
+        `;
+        container.appendChild(item);
+      }
+    }
+
+    function updateRoleOptionsForRound() {
+      const selectRole = document.getElementById('selectRole');
+      if (!selectRole) return;
+
+      const roundVal = parseInt(document.getElementById('selectRound').value) || state.currentRound || 1;
+      const groupVal = parseInt(document.getElementById('selectGroup').value) || state.myGroup || 1;
+      const currentSelected = selectRole.value || state.myRole || 'A';
+
+      let availableKeys = ['A', 'B', 'P', 'Q'];
+      if (roundVal === 4 || roundVal === 5) {
+        availableKeys = ['A', 'B', 'C', 'D'];
+      }
+
+      const activeInGroup = {};
+      const now = Date.now();
+      Object.keys(activePresence).forEach(pId => {
+        const p = activePresence[pId];
+        if (p.room === state.roomCode && p.group === groupVal && (now - p.lastPing < 7000)) {
+          activeInGroup[p.role] = true;
+        }
+      });
+
+      selectRole.innerHTML = '';
+      availableKeys.forEach(k => {
+        const opt = document.createElement('option');
+        opt.value = k;
+        const isOccupied = !!activeInGroup[k];
+        opt.innerText = isOccupied ? `점 ${k} [🔒 모둠원 사용중]` : `점 ${k} [선택 가능]`;
+        if (isOccupied) opt.disabled = true;
+        selectRole.appendChild(opt);
+      });
+
+      if (availableKeys.includes(currentSelected) && !activeInGroup[currentSelected]) {
+        selectRole.value = currentSelected;
+      }
+    }
+
+    function switchPortalTab(tab) {
+      const formStudent = document.getElementById('formStudentPortal');
+      const formTeacher = document.getElementById('formTeacherPortal');
+      const tabStudent = document.getElementById('tabPortalStudent');
+      const tabTeacher = document.getElementById('tabPortalTeacher');
+
+      if (tab === 'student') {
+        formStudent.classList.remove('hidden');
+        formTeacher.classList.add('hidden');
+        tabStudent.className = 'py-2.5 rounded-xl text-xs font-bold bg-indigo-600 text-white transition';
+        tabTeacher.className = 'py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200 transition';
+      } else {
+        formTeacher.classList.remove('hidden');
+        formStudent.classList.add('hidden');
+        tabTeacher.className = 'py-2.5 rounded-xl text-xs font-bold bg-amber-600 text-white transition';
+        tabStudent.className = 'py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200 transition';
+      }
+    }
+
+    function enterStudentGame() {
+      const selectedRole = document.getElementById('selectRole').value;
+      const groupVal = parseInt(document.getElementById('selectGroup').value);
+      const chosenRound = parseInt(document.getElementById('selectRound').value) || 1;
+
+      const now = Date.now();
+      let isAlreadyTaken = false;
+      Object.keys(activePresence).forEach(pId => {
+        const p = activePresence[pId];
+        if (p.room === state.roomCode && p.group === groupVal && p.role === selectedRole && (now - p.lastPing < 7000)) {
+          isAlreadyTaken = true;
+        }
+      });
+
+      if (isAlreadyTaken) {
+        showToast(`❌ 이미 다른 모둠원이 담당 중인 [점 ${selectedRole}]입니다! 다른 점을 선택해주세요.`, 'error');
+        updateRoleOptionsForRound();
+        return;
+      }
+
+      state.isTeacher = false;
+      state.roomCode = document.getElementById('inputRoomCode').value.trim().toUpperCase() || 'CLASS1';
+      state.currentRound = chosenRound;
+      state.myGroup = groupVal;
+      state.myRole = selectedRole;
+
+      delete state.submissions[state.myGroup];
+
+      resetPointsForRound(chosenRound);
+      initSyncNetwork();
+
+      document.getElementById('modalPortal').classList.add('hidden');
+      document.getElementById('cardStudentControl').classList.remove('hidden');
+      document.getElementById('cardTeacherControl').classList.add('hidden');
+      document.getElementById('teacherDemoTabs').classList.add('hidden');
+
+      document.getElementById('myGroupLabel').innerText = groupNames[state.myGroup];
+      document.getElementById('myGroupLabel').style.color = groupColors[state.myGroup];
+
+      document.getElementById('studentRoleBadge').classList.remove('hidden');
+      updateStageHeaderUI();
+      updateScoreboardUI();
+      renderCanvas();
+      showToast(`${groupNames[state.myGroup]} [점 ${state.myRole}] 담당으로 접속했습니다!`, 'info');
+    }
+
+    function enterTeacherGame() {
+      const pin = document.getElementById('inputTeacherPin').value;
+      if (pin !== '1234') {
+        document.getElementById('teacherPinError').classList.remove('hidden');
+        return;
+      }
+      document.getElementById('teacherPinError').classList.add('hidden');
+
+      const teacherRoom = document.getElementById('inputTeacherRoomCode').value.trim().toUpperCase() || 'CLASS1';
+      const chosenRound = parseInt(document.getElementById('selectRound').value) || 1;
+      state.isTeacher = true;
+      state.roomCode = teacherRoom;
+      state.currentRound = chosenRound;
+
+      resetPointsForRound(chosenRound);
+      initSyncNetwork();
+
+      // 교사 접속 시 룸 메타데이터 초기화/등록
+      broadcastSync('TEACHER_META', {
+        currentRound: state.currentRound,
+        goldenArcActive: state.goldenArcActive,
+        showSector: state.showSector,
+        territoriesRevealed: false
+      }, true);
+
+      document.getElementById('modalPortal').classList.add('hidden');
+      document.getElementById('cardStudentControl').classList.add('hidden');
+      document.getElementById('cardTeacherControl').classList.remove('hidden');
+      document.getElementById('teacherDemoTabs').classList.remove('hidden');
+      document.getElementById('studentRoleBadge').classList.add('hidden');
+
+      updateStageHeaderUI();
+      updateScoreboardUI();
+      renderCanvas();
+      showToast(`교사 판정판 (${state.roomCode}) 모드로 진입했습니다.`, 'info');
+    }
+
+    function openPortalModal() {
+      document.getElementById('modalPortal').classList.remove('hidden');
+      updateRoleOptionsForRound();
+    }
+
+    function checkMathMissionSuccess(ptsToCheck) {
+      const pts = ptsToCheck || state.points;
+      const pA = getPointCoords(pts.A);
+      const pB = getPointCoords(pts.B);
+      
+      if (state.stage === 1) {
+        const centralRad = getShortestCentralAngle(pts.A, pts.B);
+        const measuredInscribed = Math.round(((centralRad * 180) / Math.PI) / 2);
+        const tolerance = (state.targetAngle === 90) ? 7.0 : 5.5;
+        return Math.abs(measuredInscribed - state.targetAngle) <= tolerance;
+      } 
+      else if (state.stage === 2) {
+        const pC = getPointCoords(pts.C);
+        const pD = getPointCoords(pts.D);
+        const angA = getVertexAngleDegrees(pA, pD, pB);
+        const angC = getVertexAngleDegrees(pC, pB, pD);
+        return Math.abs((angA + angC) - 180) <= 7 && Math.abs(angA - 80) <= 7;
+      } 
+      else if (state.stage === 3) {
+        const chordArc = getShortestCentralAngle(pts.A, pts.B);
+        const measuredAngle = Math.round(((chordArc * 180) / Math.PI) / 2);
+        return Math.abs(measuredAngle - 70) <= 7;
+      }
+      return true;
+    }
+
+    function submitGroupTerritory() {
+      const isMathPass = checkMathMissionSuccess(state.points);
+      if (!isMathPass) {
+        playSound('error');
+        showToast('해당 조건을 만족하지 못합니다. 다시 조건을 맞춰주세요.', 'error');
+        return;
+      }
+
+      playSound('pop');
+      const sub = {
+        start: normRad(state.points.A),
+        end: normRad(state.points.B),
+        points: JSON.parse(JSON.stringify(state.points))
+      };
+      state.submissions[state.myGroup] = sub;
+
+      broadcastSync('SUBMIT_TERRITORY', {
+        group: state.myGroup,
+        submission: sub
+      }, true);
+
+      updateScoreboardUI();
+      renderCanvas();
+      showToast('우리 모둠의 영토 설정안이 성공적으로 전송되었습니다!', 'info');
+    }
+
+    function generateMockSubmissions() {
+      for (let g = 1; g <= 5; g++) {
+        if (!state.submissions[g]) {
+          const randStart = Math.random() * Math.PI * 1.5;
+          const targetRad = (state.targetAngle * 2) * (Math.PI / 180);
+          const randEnd = normRad(randStart + targetRad);
+
+          let mockPts = {
+            A: normRad(randStart),
+            B: randEnd,
+            P: normRad(randEnd + 1.2 + Math.random() * 0.4),
+            Q: normRad(randEnd + 1.6 + Math.random() * 0.4),
+            C: normRad(randEnd + 0.8 + Math.random() * 0.3),
+            D: normRad(randEnd + 1.5 + Math.random() * 0.3)
+          };
+
+          const sub = {
+            start: normRad(randStart),
+            end: randEnd,
+            points: mockPts
+          };
+          state.submissions[g] = sub;
+
+          // 각 모둠 데이터 즉시 전송
+          broadcastSync('SUBMIT_TERRITORY', {
+            group: g,
+            submission: sub
+          }, true);
+        }
+      }
+      updateScoreboardUI();
+      renderCanvas();
+      showToast('미제출 모둠의 영토 데이터가 무작위로 채워졌습니다.', 'info');
+    }
+
+    function toggleGoldenArc() {
+      state.goldenArcActive = !state.goldenArcActive;
+      const btnText = document.getElementById('btnToggleGoldenArcText');
+      if (btnText) {
+        btnText.innerText = state.goldenArcActive ? '황금영토 끄기' : '황금영토 켜기';
+      }
+      renderCanvas();
+      broadcastSync('TEACHER_META', { goldenArcActive: state.goldenArcActive }, true);
+      broadcastSync('TOGGLE_GOLDEN_ARC', { active: state.goldenArcActive });
+      if (state.goldenArcActive) {
+        showToast('👑 황금 영토 구역(0°~60°)이 활성화되었습니다! (점수 2배)', 'info');
+      } else {
+        showToast('황금 영토 구역이 비활성화되었습니다.', 'info');
+      }
+    }
+
+    function revealTeacherTerritories() {
+      state.territoriesRevealed = true;
+      renderCanvas();
+      broadcastSync('TEACHER_META', { territoriesRevealed: true }, true);
+      broadcastSync('REVEAL_TERRITORIES', {});
+      showToast('모든 모둠의 제출 영토가 화면에 공개되었습니다!', 'info');
+    }
+
+    function runTerritoryBattleAnimation(triggerSync = true) {
+      calculateExclusiveSegments();
+      playSound('battle');
+
+      state.isBattleAnimating = true;
+      state.battleAnimProgress = 0;
+      state.battleExecuted = true;
+      state.territoriesRevealed = true;
+      state.battleParticles = [];
+
+      const rKey = `r${state.currentRound}`;
+      for (let g = 1; g <= 5; g++) {
+        state.scores[g][rKey] = 0;
+      }
+
+      state.exclusiveSegments.forEach(seg => {
+        if (state.submissions[seg.group]) {
+          const deg = Math.max(1, Math.round(((seg.end - seg.start) * 180) / Math.PI));
+          let multiplier = 1;
+          
+          if (state.goldenArcActive) {
+            const midAng = (seg.start + seg.end) / 2;
+            if (midAng >= state.goldenArc.start && midAng <= state.goldenArc.end) {
+              multiplier = 2;
+            }
+          }
+          state.scores[seg.group][rKey] += deg * 10 * multiplier;
+        }
+      });
+
+      state.roundSnapshots[state.currentRound] = JSON.parse(JSON.stringify(state.submissions));
+
+      if (triggerSync) {
+        broadcastSync('RUN_BATTLE', {
+          submissions: state.submissions,
+          scores: state.scores,
+          roundSnapshots: state.roundSnapshots,
+          exclusiveSegments: state.exclusiveSegments,
+          overlappingSegments: state.overlappingSegments
+        }, true);
+      }
+
+      updateScoreboardUI();
+      const btnNext = document.getElementById('btnNextRound');
+      if (btnNext) btnNext.classList.remove('hidden');
+
+      const nextTxt = document.getElementById('btnNextRoundText');
+      if (nextTxt) {
+        if (state.currentRound === 5) {
+          nextTxt.innerText = '🏆 최종 시상식 열기';
+        } else {
+          nextTxt.innerText = `다음 라운드 진행 (${state.currentRound + 1}/5)`;
+        }
+      }
+    }
+
+    function proceedToNextRound() {
+      if (state.currentRound < 5) {
+        state.currentRound++;
+        state.submissions = {};
+        state.exclusiveSegments = [];
+        state.overlappingSegments = [];
+        state.battleExecuted = false;
+        state.territoriesRevealed = false;
+
+        resetPointsForRound(state.currentRound);
+        document.getElementById('roundBadgeText').innerText = `라운드 ${state.currentRound} / 5`;
+        const btnNext = document.getElementById('btnNextRound');
+        if (btnNext) btnNext.classList.add('hidden');
+        const btnRev = document.getElementById('btnRevealText');
+        if (btnRev) btnRev.innerText = '1. 제출 영토 공개';
+
+        // 교사의 라운드 변경을 전 학생 화면에 Firebase로 전파
+        if (fbDB) {
+          getRoomRef('submissions').remove();
+          getRoomRef('battleEvent').remove();
+        }
+
+        broadcastSync('TEACHER_META', {
+          currentRound: state.currentRound,
+          territoriesRevealed: false,
+          scores: state.scores,
+          roundSnapshots: state.roundSnapshots
+        }, true);
+
+        updateStageHeaderUI();
+        updateScoreboardUI();
+        renderCanvas();
+        showToast(`⚡ 교사 판정판이 라운드 ${state.currentRound}로 설정되었습니다!`, 'info');
+      } else {
+        showVictoryPodiumModal();
+      }
+    }
+
+    function setTeacherRound(rNum) {
+      state.currentRound = rNum;
+      state.submissions = {};
+      state.exclusiveSegments = [];
+      state.overlappingSegments = [];
+      state.battleExecuted = false;
+      state.territoriesRevealed = false;
+
+      resetPointsForRound(rNum);
+      document.getElementById('roundBadgeText').innerText = `라운드 ${state.currentRound} / 5`;
+      const btnRev = document.getElementById('btnRevealText');
+      if (btnRev) btnRev.innerText = '1. 제출 영토 공개';
+      updateStageHeaderUI();
+      renderCanvas();
+
+      if (fbDB) {
+        getRoomRef('submissions').remove();
+        getRoomRef('battleEvent').remove();
+      }
+
+      broadcastSync('TEACHER_META', {
+        currentRound: state.currentRound,
+        territoriesRevealed: false
+      }, true);
+
+      for (let i = 1; i <= 5; i++) {
+        const btn = document.getElementById(`btnTeacherRound${i}`);
+        if (btn) {
+          if (i === rNum) {
+            btn.className = 'px-2 py-1 rounded-lg font-medium bg-indigo-600 text-white transition';
+          } else {
+            btn.className = 'px-2 py-1 rounded-lg font-medium text-slate-400 hover:text-slate-200 transition';
+          }
+        }
+      }
+    }
+
+    function toggleGeometryOverlay() {
+      state.showOverlay = !state.showOverlay;
+      const btnText = document.getElementById('btnToggleOverlayText');
+      if (state.showOverlay) {
+        btnText.innerText = '도형 숨기기';
+      } else {
+        btnText.innerText = '도형 보이기';
+      }
+      renderCanvas();
+    }
+
+    function initConfettiParticles() {
+      const canvasC = document.getElementById('confettiCanvas');
+      if (!canvasC) return;
+      canvasC.width = window.innerWidth;
+      canvasC.height = window.innerHeight;
+
+      confettiParticles = [];
+      fireworkParticles = [];
+      const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#f43f5e', '#eab308', '#06b6d4', '#ffffff'];
+
+      for (let i = 0; i < 200; i++) {
+        confettiParticles.push({
+          x: Math.random() * canvasC.width,
+          y: Math.random() * canvasC.height - canvasC.height * 0.8,
+          vx: (Math.random() - 0.5) * 5,
+          vy: 2.5 + Math.random() * 5,
+          size: 7 + Math.random() * 9,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          rotation: Math.random() * Math.PI * 2,
+          rotationSpeed: (Math.random() - 0.5) * 0.15
+        });
+      }
+
+      for (let f = 0; f < 4; f++) {
+        const cx = canvasC.width * (0.2 + f * 0.2);
+        const cy = canvasC.height * (0.25 + Math.random() * 0.3);
+        const fColor = colors[Math.floor(Math.random() * colors.length)];
+
+        for (let i = 0; i < 35; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = 3 + Math.random() * 8;
+          fireworkParticles.push({
+            x: cx,
+            y: cy,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            size: 4 + Math.random() * 5,
+            color: fColor,
+            life: 1.0,
+            decay: 0.012 + Math.random() * 0.015
+          });
+        }
+      }
+
+      isConfettiActive = true;
+    }
+
+    function updateAndDrawConfetti() {
+      if (!isConfettiActive) return;
+      const canvasC = document.getElementById('confettiCanvas');
+      if (!canvasC) return;
+      const ctxC = canvasC.getContext('2d');
+      ctxC.clearRect(0, 0, canvasC.width, canvasC.height);
+
+      let activeCount = 0;
+
+      confettiParticles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rotation += p.rotationSpeed;
+
+        if (p.y < canvasC.height + 30) {
+          activeCount++;
+          ctxC.save();
+          ctxC.translate(p.x, p.y);
+          ctxC.rotate(p.rotation);
+          ctxC.fillStyle = p.color;
+          ctxC.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+          ctxC.restore();
+        }
+      });
+
+      fireworkParticles.forEach(fp => {
+        fp.x += fp.vx;
+        fp.y += fp.vy;
+        fp.vy += 0.06;
+        fp.life -= fp.decay;
+
+        if (fp.life > 0) {
+          activeCount++;
+          ctxC.save();
+          ctxC.beginPath();
+          ctxC.arc(fp.x, fp.y, fp.size * fp.life, 0, 2 * Math.PI);
+          ctxC.fillStyle = fp.color;
+          ctxC.shadowColor = fp.color;
+          ctxC.shadowBlur = 8;
+          ctxC.fill();
+          ctxC.restore();
+        }
+      });
+
+      if (activeCount === 0) isConfettiActive = false;
+    }
+
+    function showVictoryPodiumModal() {
+      playSound('victory');
+      initConfettiParticles();
+
+      const sortedGroups = [1, 2, 3, 4, 5].map(gId => {
+        const s = state.scores[gId];
+        const sum = (s.r1 || 0) + (s.r2 || 0) + (s.r3 || 0) + (s.r4 || 0) + (s.r5 || 0);
+        return { gId, sum };
+      }).sort((a, b) => b.sum - a.sum);
+
+      const podiumContainer = document.getElementById('podiumContainer');
+      podiumContainer.innerHTML = '';
+
+      const podiumOrder = [sortedGroups[1], sortedGroups[0], sortedGroups[2]];
+      const rankLabels = ['2위', '1위 🏆', '3위'];
+      const heights = ['h-28', 'h-36', 'h-24'];
+      const bgColors = ['bg-slate-700/80', 'bg-gradient-to-t from-amber-600 to-yellow-400', 'bg-amber-800/60'];
+
+      podiumOrder.forEach((item, idx) => {
+        if (!item) return;
+        const gName = groupNames[item.gId];
+        const card = document.createElement('div');
+        card.className = `flex flex-col items-center justify-end rounded-2xl p-3 ${heights[idx]} ${bgColors[idx]} border border-white/20 shadow-xl transition transform hover:scale-105`;
+        card.innerHTML = `
+          <div class="text-[11px] font-bold text-white/90 mb-1">${rankLabels[idx]}</div>
+          <div class="text-xs font-black text-white">${gName}</div>
+          <div class="text-sm font-extrabold text-slate-900 mt-1 bg-white/90 px-2 py-0.5 rounded-full">${item.sum} pt</div>
+        `;
+        podiumContainer.appendChild(card);
+      });
+
+      document.getElementById('modalVictory').classList.remove('hidden');
+    }
+
+    function closeVictoryModal() {
+      document.getElementById('modalVictory').classList.add('hidden');
+      isConfettiActive = false;
+    }
+
+    function openGalleryModal() {
+      document.getElementById('modalGallery').classList.remove('hidden');
+      renderGalleryCards(1);
+    }
+
+    function closeGalleryModal() {
+      document.getElementById('modalGallery').classList.add('hidden');
+    }
+
+    function renderGalleryCards(roundNum) {
+      for (let i = 1; i <= 5; i++) {
+        const tabBtn = document.getElementById(`tabGalleryR${i}`);
+        if (tabBtn) {
+          tabBtn.className = (i === roundNum)
+            ? 'px-3.5 py-2 rounded-xl bg-indigo-600 text-white transition whitespace-nowrap font-bold'
+            : 'px-3.5 py-2 rounded-xl text-slate-400 hover:text-slate-200 transition whitespace-nowrap font-bold';
+        }
+      }
+
+      const grid = document.getElementById('galleryCardsGrid');
+      grid.innerHTML = '';
+
+      const rSnap = state.roundSnapshots[roundNum] || {};
+
+      for (let g = 1; g <= 5; g++) {
+        const sub = rSnap[g];
+        const card = document.createElement('div');
+        card.className = 'bg-slate-950 p-3 rounded-2xl border border-slate-800 flex flex-col items-center space-y-2 shadow-lg cursor-pointer hover:border-indigo-500/50 transition transform hover:-translate-y-1';
+        card.onclick = () => openDetailSnapshotModal(roundNum, g, sub);
+
+        const header = document.createElement('div');
+        header.className = 'w-full flex items-center justify-between text-xs font-bold';
+        header.innerHTML = `
+          <span style="color:${groupColors[g]}">${groupNames[g]}</span>
+          <span class="${sub ? 'text-emerald-400' : 'text-slate-600'} text-[10px]">${sub ? '제출 완료' : '미제출'}</span>
+        `;
+        card.appendChild(header);
+
+        const miniCanvas = document.createElement('canvas');
+        miniCanvas.width = 160;
+        miniCanvas.height = 160;
+        miniCanvas.className = 'w-full aspect-square bg-slate-900 rounded-xl border border-slate-800/80';
+        drawMiniSnapshot(miniCanvas, roundNum, g, sub);
+        card.appendChild(miniCanvas);
+
+        const footer = document.createElement('div');
+        footer.className = 'text-[10px] text-slate-400 font-mono flex items-center space-x-1';
+        footer.innerHTML = `<span>🔍 클릭하여 확대</span>`;
+        card.appendChild(footer);
+
+        grid.appendChild(card);
+      }
+    }
+
+    function drawMiniSnapshot(mCanvas, roundNum, gId, sub) {
+      const mCtx = mCanvas.getContext('2d');
+      const mcx = mCanvas.width / 2;
+      const mcy = mCanvas.height / 2;
+      const isLarge = mCanvas.width > 200;
+      const mr = isLarge ? 120 : 55;
+
+      mCtx.clearRect(0, 0, mCanvas.width, mCanvas.height);
+
+      mCtx.beginPath();
+      mCtx.arc(mcx, mcy, mr, 0, 2 * Math.PI);
+      mCtx.strokeStyle = '#334155';
+      mCtx.lineWidth = isLarge ? 3.5 : 2.5;
+      mCtx.stroke();
+
+      if (!sub) {
+        mCtx.font = isLarge ? 'bold 14px Pretendard' : 'bold 11px Pretendard';
+        mCtx.fillStyle = '#475569';
+        mCtx.textAlign = 'center';
+        mCtx.fillText('제출 기록 없음', mcx, mcy);
+        return;
+      }
+
+      const pts = sub.points ? JSON.parse(JSON.stringify(sub.points)) : JSON.parse(JSON.stringify(state.points));
+      pts.A = sub.start;
+      pts.B = sub.end;
+
+      const getMC = (rad) => ({ x: mcx + mr * Math.cos(rad), y: mcy + mr * Math.sin(rad) });
+
+      const angA = normRad(pts.A);
+      const angB = normRad(pts.B);
+
+      // 모둠의 영토 호(Arc)
+      mCtx.beginPath();
+      mCtx.arc(mcx, mcy, mr, angA, angB, false);
+      mCtx.strokeStyle = groupColors[gId];
+      mCtx.lineWidth = isLarge ? 9 : 6;
+      mCtx.stroke();
+
+      const mpA = getMC(angA);
+      const mpB = getMC(angB);
+
+      // 라운드별 기하 보조선
+      if (roundNum <= 3) {
+        const mpP = getMC(pts.P);
+        mCtx.beginPath();
+        mCtx.moveTo(mpA.x, mpA.y);
+        mCtx.lineTo(mpP.x, mpP.y);
+        mCtx.lineTo(mpB.x, mpB.y);
+        mCtx.strokeStyle = '#60a5fa';
+        mCtx.lineWidth = isLarge ? 2.5 : 1.5;
+        mCtx.stroke();
+
+        mCtx.beginPath();
+        mCtx.arc(mpP.x, mpP.y, isLarge ? 5 : 3, 0, 2 * Math.PI);
+        mCtx.fillStyle = '#60a5fa';
+        mCtx.fill();
+      } else if (roundNum === 4) {
+        const mpC = getMC(pts.C);
+        const mpD = getMC(pts.D);
+        mCtx.beginPath();
+        mCtx.moveTo(mpA.x, mpA.y);
+        mCtx.lineTo(mpB.x, mpB.y);
+        mCtx.lineTo(mpC.x, mpC.y);
+        mCtx.lineTo(mpD.x, mpD.y);
+        mCtx.closePath();
+        mCtx.strokeStyle = '#38bdf8';
+        mCtx.lineWidth = isLarge ? 2.5 : 1.5;
+        mCtx.stroke();
+
+        [mpC, mpD].forEach(p => {
+          mCtx.beginPath();
+          mCtx.arc(p.x, p.y, isLarge ? 5 : 3, 0, 2 * Math.PI);
+          mCtx.fillStyle = '#38bdf8';
+          mCtx.fill();
+        });
+      } else if (roundNum === 5) {
+        const mpC = getMC(pts.C);
+        const tanAng = angA + Math.PI / 2;
+        const lineLen = isLarge ? 70 : 35;
+        const t1 = { x: mpA.x + lineLen * Math.cos(tanAng), y: mpA.y + lineLen * Math.sin(tanAng) };
+        const t2 = { x: mpA.x - lineLen * Math.cos(tanAng), y: mpA.y - lineLen * Math.sin(tanAng) };
+
+        mCtx.beginPath();
+        mCtx.moveTo(t1.x, t1.y);
+        mCtx.lineTo(t2.x, t2.y);
+        mCtx.strokeStyle = '#ef4444';
+        mCtx.lineWidth = isLarge ? 3 : 2;
+        mCtx.stroke();
+
+        mCtx.beginPath();
+        mCtx.moveTo(mpA.x, mpA.y);
+        mCtx.lineTo(mpC.x, mpC.y);
+        mCtx.lineTo(mpB.x, mpB.y);
+        mCtx.strokeStyle = '#38bdf8';
+        mCtx.lineWidth = isLarge ? 2.5 : 1.5;
+        mCtx.stroke();
+
+        mCtx.beginPath();
+        mCtx.arc(mpC.x, mpC.y, isLarge ? 5 : 3, 0, 2 * Math.PI);
+        mCtx.fillStyle = '#38bdf8';
+        mCtx.fill();
+      }
+
+      // 호 양 끝점 A, B 마커
+      [mpA, mpB].forEach(p => {
+        mCtx.beginPath();
+        mCtx.arc(p.x, p.y, isLarge ? 6 : 4, 0, 2 * Math.PI);
+        mCtx.fillStyle = '#ffffff';
+        mCtx.fill();
+        mCtx.strokeStyle = groupColors[gId];
+        mCtx.lineWidth = 1.5;
+        mCtx.stroke();
+      });
+    }
+
+    function openDetailSnapshotModal(roundNum, gId, sub) {
+      const modal = document.getElementById('modalDetailSnapshot');
+      const title = document.getElementById('detailGroupTitle');
+      const badge = document.getElementById('detailGroupBadge');
+      const desc = document.getElementById('detailDescText');
+      const dCanvas = document.getElementById('detailCanvas');
+
+      badge.style.backgroundColor = groupColors[gId];
+      title.innerText = `${groupNames[gId]} - 라운드 ${roundNum} 제출 스냅샷`;
+
+      if (!sub) {
+        desc.innerText = '해당 라운드 제출 기록이 없습니다.';
+      } else {
+        const centralRad = getShortestCentralAngle(sub.start, sub.end);
+        const centralDeg = Math.round((centralRad * 180) / Math.PI);
+        const inscribedDeg = Math.round(centralDeg / 2);
+        desc.innerText = `호 AB 중심각 = ${centralDeg}° | 원주각 = ${inscribedDeg}° (목표 달성 완료)`;
+      }
+
+      drawMiniSnapshot(dCanvas, roundNum, gId, sub);
+      modal.classList.remove('hidden');
+    }
+
+    function closeDetailSnapshotModal() {
+      document.getElementById('modalDetailSnapshot').classList.add('hidden');
+    }
+
+    function handlePointerDown(x, y) {
+      const activeKey = state.isTeacher ? null : state.myRole;
+      const keys = state.isTeacher ? Object.keys(state.points) : [activeKey];
+
+      for (let k of keys) {
+        if (!k || typeof state.points[k] === 'undefined') continue;
+        const pt = getPointCoords(state.points[k]);
+        const dist = Math.hypot(pt.x - x, pt.y - y);
+        if (dist <= 24) {
+          draggingPoint = k;
+          playSound('pop');
+          break;
+        }
+      }
+    }
+
+    function handlePointerMove(x, y) {
+      if (!draggingPoint) return;
+
+      const angle = Math.atan2(y - circleCenter.y, x - circleCenter.x);
+      const normAngle = normRad(angle);
+
+      state.points[draggingPoint] = normAngle;
+
+      broadcastSync('POINT_MOVE', {
+        points: { [draggingPoint]: normAngle }
+      });
+
+      renderCanvas();
+    }
+
+    function handlePointerUp() {
+      draggingPoint = null;
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      handlePointerDown(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      handlePointerMove(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    window.addEventListener('mouseup', handlePointerUp);
+
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const rect = canvas.getBoundingClientRect();
+        handlePointerDown(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
+      }
+    });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1 && draggingPoint) {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        handlePointerMove(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', handlePointerUp);
+
+    function gameLoop() {
+      if (state.isBattleAnimating) {
+        state.battleAnimProgress += 0.016;
+        renderCanvas();
+      }
+      if (isConfettiActive) {
+        updateAndDrawConfetti();
+      }
+      requestAnimationFrame(gameLoop);
+    }
+
+    window.onload = function () {
+      lucide.createIcons();
+      initSyncNetwork();
+      resetPointsForRound(1);
+      updateRoleOptionsForRound();
+      updateStageHeaderUI();
+      updateScoreboardUI();
+      renderCanvas();
+      gameLoop();
+    };
+  </script>
+</body>
+</html>
