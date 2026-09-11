@@ -248,7 +248,7 @@
       <form id="formStudentPortal" onsubmit="event.preventDefault(); enterStudentGame();" class="space-y-4">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1.5">교실 방 번호</label>
-          <input type="text" id="inputRoomCode" value="CLASS1" onchange="changeRoomCode()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+          <input type="text" id="inputRoomCode" value="CLASS1" onchange="changeRoomCode()" oninput="changeRoomCode()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
         </div>
 
         <div>
@@ -665,8 +665,9 @@
       const newRoom = roomInput.value.trim().toUpperCase() || 'CLASS1';
       if (newRoom === state.roomCode) return;
 
+      clearMyPresence();
       state.roomCode = newRoom;
-      Object.keys(activePresence).forEach(k => delete activePresence[k]);
+      for (const k in activePresence) delete activePresence[k];
 
       if (localChannel) {
         try { localChannel.close(); } catch(e){}
@@ -684,6 +685,36 @@
       const cleanRoom = (state.roomCode || 'CLASS1').replace(/[.#$\[\]]/g, '_');
       const basePath = `circle_mania/rooms/${cleanRoom}`;
       return fbDB ? fbDB.ref(subPath ? `${basePath}/${subPath}` : basePath) : null;
+    }
+
+    function registerMyPresence() {
+      if (state.isTeacher || !state.myGroup || !state.myRole) return;
+      const presenceData = {
+        room: state.roomCode,
+        group: state.myGroup,
+        role: state.myRole,
+        clientId: clientId,
+        updatedAt: Date.now()
+      };
+      activePresence[clientId] = presenceData;
+
+      if (fbDB) {
+        const pRef = getRoomRef(`presence/${clientId}`);
+        if (pRef) {
+          pRef.set(presenceData);
+          pRef.onDisconnect().remove();
+        }
+      }
+      broadcastSync('PRESENCE_UPDATE', presenceData, true);
+    }
+
+    function clearMyPresence() {
+      delete activePresence[clientId];
+      if (fbDB) {
+        const pRef = getRoomRef(`presence/${clientId}`);
+        if (pRef) pRef.remove();
+      }
+      broadcastSync('PRESENCE_UPDATE', { clientId: clientId, remove: true }, true);
     }
 
     function initSyncNetwork() {
@@ -750,7 +781,6 @@
           roomRef.child('points').on('value', (snap) => {
             const val = snap.val();
             if (!val) return;
-            // 학생은 자기 조의 점만 실시간 반영, 교사는 모든 조/선택 점 반영
             if (!state.isTeacher) {
               const myGroupPoints = val[state.myGroup];
               if (myGroupPoints && myGroupPoints.sender !== clientId) {
@@ -758,7 +788,6 @@
                 renderCanvas();
               }
             } else {
-              // 교사용 화면: 현재 보고 있는 모둠이나 기본 점 갱신
               const teacherGroupPts = val[state.myGroup] || val[1];
               if (teacherGroupPts && teacherGroupPts.sender !== clientId && !state.battleExecuted) {
                 Object.assign(state.points, teacherGroupPts.coords);
@@ -786,31 +815,26 @@
             runTerritoryBattleAnimation(false);
           });
 
-          // 5. 학생 참가자 Presence (하트비트)
+          // 5. 학생 참가자 Presence (1인 1점 중복 방지 락)
           roomRef.child('presence').on('value', (snap) => {
-            const val = snap.val();
-            if (!val) return;
-            Object.assign(activePresence, val);
+            const val = snap.val() || {};
+            for (const k in activePresence) {
+              if (k !== clientId) delete activePresence[k];
+            }
+            Object.keys(val).forEach(k => {
+              activePresence[k] = val[k];
+            });
             updateRoleOptionsForRound();
           });
         }
       }
 
-      // 주기적 하트비트
+      // 주기적 하트비트 갱신
       setInterval(() => {
-        if (!state.isTeacher && state.myGroup && state.myRole && fbDB) {
-          const pRef = getRoomRef(`presence/${clientId}`);
-          if (pRef) {
-            pRef.set({
-              room: state.roomCode,
-              group: state.myGroup,
-              role: state.myRole,
-              lastPing: Date.now()
-            });
-            pRef.onDisconnect().remove();
-          }
+        if (!state.isTeacher && state.myGroup && state.myRole) {
+          registerMyPresence();
         }
-      }, 3000);
+      }, 5000);
     }
 
     function broadcastSync(action, data = {}, forceImmediate = false) {
@@ -897,6 +921,15 @@
         if (typeof msg.data.show !== 'undefined') {
           state.showSector = msg.data.show;
           renderCanvas();
+        }
+      } else if (msg.action === 'PRESENCE_UPDATE') {
+        if (msg.data && msg.data.clientId) {
+          if (msg.data.remove) {
+            delete activePresence[msg.data.clientId];
+          } else {
+            activePresence[msg.data.clientId] = msg.data;
+          }
+          updateRoleOptionsForRound();
         }
       } else if (msg.action === 'RUN_BATTLE') {
         if (msg.data) {
@@ -1547,10 +1580,10 @@
       }
 
       const activeInGroup = {};
-      const now = Date.now();
       Object.keys(activePresence).forEach(pId => {
+        if (pId === clientId) return; // 본인의 기존 점유는 선택 가능하게 유지
         const p = activePresence[pId];
-        if (p.room === state.roomCode && p.group === groupVal && (now - p.lastPing < 7000)) {
+        if (p && p.room === state.roomCode && Number(p.group) === Number(groupVal)) {
           activeInGroup[p.role] = true;
         }
       });
@@ -1561,12 +1594,23 @@
         opt.value = k;
         const isOccupied = !!activeInGroup[k];
         opt.innerText = isOccupied ? `점 ${k} [🔒 모둠원 사용중]` : `점 ${k} [선택 가능]`;
-        if (isOccupied) opt.disabled = true;
+        if (isOccupied) {
+          opt.disabled = true;
+          opt.className = 'text-slate-500 bg-slate-900';
+        } else {
+          opt.className = 'text-slate-100 bg-slate-800';
+        }
         selectRole.appendChild(opt);
       });
 
+      // 이미 점유된 점이 선택되어 있다면 사용 가능한 첫 번째 점으로 자동 이동
       if (availableKeys.includes(currentSelected) && !activeInGroup[currentSelected]) {
         selectRole.value = currentSelected;
+      } else {
+        const firstAvailable = availableKeys.find(k => !activeInGroup[k]);
+        if (firstAvailable) {
+          selectRole.value = firstAvailable;
+        }
       }
     }
 
@@ -1593,12 +1637,14 @@
       const selectedRole = document.getElementById('selectRole').value;
       const groupVal = parseInt(document.getElementById('selectGroup').value);
       const chosenRound = parseInt(document.getElementById('selectRound').value) || 1;
+      const targetRoom = document.getElementById('inputRoomCode').value.trim().toUpperCase() || 'CLASS1';
 
-      const now = Date.now();
+      // 다른 모둠원이 이미 점유했는지 실시간 최종 검증
       let isAlreadyTaken = false;
       Object.keys(activePresence).forEach(pId => {
+        if (pId === clientId) return;
         const p = activePresence[pId];
-        if (p.room === state.roomCode && p.group === groupVal && p.role === selectedRole && (now - p.lastPing < 7000)) {
+        if (p && p.room === targetRoom && Number(p.group) === Number(groupVal) && p.role === selectedRole) {
           isAlreadyTaken = true;
         }
       });
@@ -1609,8 +1655,11 @@
         return;
       }
 
+      // 이전 점 점유 해제 후 새 점으로 등록
+      clearMyPresence();
+
       state.isTeacher = false;
-      state.roomCode = document.getElementById('inputRoomCode').value.trim().toUpperCase() || 'CLASS1';
+      state.roomCode = targetRoom;
       state.currentRound = chosenRound;
       state.myGroup = groupVal;
       state.myRole = selectedRole;
@@ -1619,6 +1668,9 @@
 
       resetPointsForRound(chosenRound);
       initSyncNetwork();
+
+      // 입장 즉시 Firebase 및 모든 클라이언트에 점유 등록
+      registerMyPresence();
 
       document.getElementById('modalPortal').classList.add('hidden');
       document.getElementById('cardStudentControl').classList.remove('hidden');
@@ -1676,6 +1728,10 @@
       document.getElementById('modalPortal').classList.remove('hidden');
       updateRoleOptionsForRound();
     }
+
+    window.addEventListener('beforeunload', () => {
+      clearMyPresence();
+    });
 
     function checkMathMissionSuccess(ptsToCheck) {
       const pts = ptsToCheck || state.points;
