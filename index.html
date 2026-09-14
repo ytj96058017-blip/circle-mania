@@ -11,6 +11,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script>
+  <!-- 학내망 방화벽 및 Firebase 차단 대비 초고속 백업 MQTT 엔진 -->
+  <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
 
   <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
@@ -42,7 +44,7 @@
     <div class="flex items-center space-x-3">
       <div id="syncBadge" class="flex items-center space-x-1.5 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-full text-xs font-semibold text-emerald-300">
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-        <span id="syncStatusText">Firebase 실시간 연동 완료</span>
+        <span id="syncStatusText">실시간 동기화 준비중...</span>
       </div>
 
       <div id="roundBadge" class="flex items-center space-x-2 bg-amber-500/10 border border-amber-500/30 px-3 py-1.5 rounded-full">
@@ -395,11 +397,12 @@
   <!-- JAVASCRIPT LOGIC -->
   <script>
     /* ==========================================================
-       🔥 FIREBASE INITIALIZATION (USER's REAL CONFIGURATION)
+       🔥 FIREBASE & HYBRID BACKUP CONFIGURATION
        ========================================================== */
     const firebaseConfig = {
       apiKey: "AIzaSyChxrOzoTxFMy_BvkvNZLXAp1oRvN7Fb1g",
       authDomain: "focus-tower-defense.firebaseapp.com",
+      databaseURL: "https://focus-tower-defense-default-rtdb.firebaseio.com", // 기본 RTDB 주소 명시 바인딩
       projectId: "focus-tower-defense",
       storageBucket: "focus-tower-defense.firebasestorage.app",
       messagingSenderId: "519329169002",
@@ -409,10 +412,13 @@
 
     let fbApp = null;
     let fbDB = null;
+    let isFirebaseReady = false;
+    let mqttClient = null;
+    let isMqttReady = false;
+
     try {
       fbApp = firebase.initializeApp(firebaseConfig);
       fbDB = firebase.database();
-      const analytics = firebase.analytics();
     } catch(e) {
       console.warn("Firebase Init fallback/warning:", e);
       if (firebase.apps && firebase.apps.length > 0) {
@@ -428,7 +434,7 @@
     const clientId = 'client_' + Math.random().toString(36).substring(2, 9);
     let draggingPoint = null;
     let lastBroadcastTime = 0;
-    const THROTTLE_INTERVAL_MS = 35; // 초당 최대 28프레임 전송 (학내망 트래픽 85% 절감 및 부드러운 반응)
+    const THROTTLE_INTERVAL_MS = 35; // 초당 최대 28프레임 전송
 
     // 💡 교사 전용 2분 타이머 상태 변수
     let teacherTimerInterval = null;
@@ -725,13 +731,30 @@
     }
 
     function clearRoomPresence() {
-      if (fbDB) {
-        getRoomRef('presence').remove();
+      if (fbDB && isFirebaseReady) {
+        getRoomRef('presence').remove().catch(() => {});
       }
       for (const k in activePresence) delete activePresence[k];
       broadcastSync('CLEAR_ALL_PRESENCE', {}, true);
       updateRoleOptionsForRound();
       showToast('모든 학생의 점 점유 및 유령 세션이 초기화되었습니다.', 'info');
+    }
+
+    /* ==========================================================
+       🔥 HYBRID SYNC ENGINE (Firebase + MQTT + BroadcastChannel)
+       ========================================================== */
+    function updateSyncBadgeStatus() {
+      const badge = document.getElementById('syncStatusText');
+      if (!badge) return;
+      if (isFirebaseReady && isMqttReady) {
+        badge.innerText = '듀얼 실시간 연동 (초고속)';
+      } else if (isFirebaseReady) {
+        badge.innerText = 'Firebase 실시간 연동 완료';
+      } else if (isMqttReady) {
+        badge.innerText = '백업망(MQTT) 연동 완료';
+      } else {
+        badge.innerText = '동기화 연결 중...';
+      }
     }
 
     function initSyncNetwork() {
@@ -740,7 +763,7 @@
         state.roomCode = roomInput.value.trim().toUpperCase() || 'CLASS1';
       }
 
-      // 로컬 브라우저 탭 간 BroadcastChannel
+      // 1. 브라우저 로컬 탭 간 즉각 통신 (BroadcastChannel)
       try {
         if (window.BroadcastChannel) {
           if (localChannel) localChannel.close();
@@ -751,25 +774,63 @@
         console.warn('BroadcastChannel error:', e);
       }
 
-      // Firebase Realtime DB 구독 설정 (기존 리스너 정리 후 1회만 등록)
+      // 2. 백업 MQTT 소켓망 연결 (Firebase 보안 규칙 차단 or 학내망 방화벽 시 100% 자동 방어)
+      try {
+        if (!mqttClient || !mqttClient.connected) {
+          mqttClient = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+            clientId: clientId,
+            clean: true,
+            connectTimeout: 4000
+          });
+
+          mqttClient.on('connect', () => {
+            isMqttReady = true;
+            updateSyncBadgeStatus();
+            mqttClient.subscribe(`circle_mania/${state.roomCode}/#`);
+            broadcastSync('REQUEST_STATE', {});
+          });
+
+          mqttClient.on('message', (topic, payload) => {
+            try {
+              const msg = JSON.parse(payload.toString());
+              if (msg.sender !== clientId) {
+                handleIncomingSyncMsg(msg);
+              }
+            } catch (e) {}
+          });
+
+          mqttClient.on('error', () => {
+            isMqttReady = false;
+            updateSyncBadgeStatus();
+          });
+        }
+      } catch (e) {
+        console.warn('MQTT backup init error:', e);
+      }
+
+      // 3. Firebase Realtime DB 구독 설정
       if (fbDB) {
         const roomRef = getRoomRef();
         if (roomRef) {
-          roomRef.off(); // 중복 리스너 완전 제거
+          // 중복 리스너 해제
+          try {
+            roomRef.child('meta').off();
+            roomRef.child('points').off();
+            roomRef.child('submissions').off();
+            roomRef.child('battleEvent').off();
+            roomRef.child('presence').off();
+          } catch(e){}
 
-          // 실시간 연결 상태 표시
+          // Firebase 소켓 연결 상태 감지
           fbDB.ref('.info/connected').on('value', (snap) => {
-            const badge = document.getElementById('syncStatusText');
-            if (badge) {
-              badge.innerText = snap.val() ? 'Firebase 실시간 연동 완료' : '연결 재시도 중...';
-            }
+            isFirebaseReady = !!snap.val();
+            updateSyncBadgeStatus();
           });
 
           // 1. 교사 메인 제어 상태 동기화 (Teacher State)
           roomRef.child('meta').on('value', (snap) => {
             const val = snap.val();
-            if (!val) return;
-            if (val.sender === clientId) return;
+            if (!val || val.sender === clientId) return;
 
             if (typeof val.currentRound === 'number' && val.currentRound !== state.currentRound) {
               state.currentRound = val.currentRound;
@@ -794,9 +855,12 @@
 
             updateScoreboardUI();
             renderCanvas();
+          }, (err) => {
+            console.warn("Firebase meta read permission error:", err);
+            showToast("⚠️ Firebase 규칙 확인 필요: Realtime Database 규칙을 확인해주세요.", "error");
           });
 
-          // 2. 모둠별 점 좌표 정밀 동기화 (내 조작 점 보호 & 개별 점 단위 병합)
+          // 2. 모둠별 점 좌표 정밀 동기화 (내 점 보호 & 조별 1:1 격리)
           roomRef.child('points').on('value', (snap) => {
             const val = snap.val();
             if (!val) return;
@@ -805,13 +869,16 @@
 
             if (groupData && groupData.coords) {
               const coords = groupData.coords;
+              let changed = false;
               Object.keys(coords).forEach(k => {
-                // 핵심: 내가 현재 손가락으로 드래그하고 있는 내 점은 외부 데이터로 덮어쓰지 않음!
                 if (k !== draggingPoint && typeof coords[k] === 'number') {
-                  state.points[k] = coords[k];
+                  if (Math.abs(state.points[k] - coords[k]) > 0.0001) {
+                    state.points[k] = coords[k];
+                    changed = true;
+                  }
                 }
               });
-              renderCanvas();
+              if (changed) renderCanvas();
             }
           });
 
@@ -843,12 +910,10 @@
             }
             Object.keys(val).forEach(k => {
               const p = val[k];
-              // 8초 이내에 하트비트가 갱신된 활성 세션만 인정 (유령 세션 필터링)
               if (p && (!p.updatedAt || (now - p.updatedAt < 8000))) {
                 activePresence[k] = p;
-              } else if (fbDB && p && (now - p.updatedAt >= 8000)) {
-                // 8초 이상 지난 유령 데이터는 DB에서 자동 정리
-                roomRef.child(`presence/${k}`).remove();
+              } else if (p && (now - p.updatedAt >= 8000)) {
+                roomRef.child(`presence/${k}`).remove().catch(() => {});
               }
             });
             updateRoleOptionsForRound();
@@ -856,7 +921,7 @@
         }
       }
 
-      // 주기적 하트비트 갱신 (게임 입장 완료된 학생만)
+      // 주기적 하트비트 갱신
       setInterval(() => {
         if (!state.isTeacher && state.isInGame && state.myGroup && state.myRole) {
           registerMyPresence();
@@ -867,7 +932,7 @@
     function broadcastSync(action, data = {}, forceImmediate = false) {
       const now = performance.now();
       if (!forceImmediate && action === 'POINT_MOVE' && (now - lastBroadcastTime < THROTTLE_INTERVAL_MS)) {
-        return; // 과도한 네트워크 전송 방지 쓰로틀링
+        return;
       }
       lastBroadcastTime = now;
 
@@ -880,16 +945,24 @@
         data: data
       };
 
-      // 1. BroadcastChannel (로컬 탭 즉시 전송)
-      if (localChannel) localChannel.postMessage(packet);
+      // 1. Local BroadcastChannel
+      if (localChannel) {
+        try { localChannel.postMessage(packet); } catch(e){}
+      }
 
-      // 2. Firebase Realtime Database 업데이트 (개별 점 충돌 없는 정밀 저장)
+      // 2. Backup MQTT Network (Firebase 실패 시에도 기기간 100% 동기화 보장)
+      if (mqttClient && mqttClient.connected) {
+        try {
+          mqttClient.publish(`circle_mania/${state.roomCode}/sync`, JSON.stringify(packet));
+        } catch (e) {}
+      }
+
+      // 3. Firebase Realtime Database 정밀 업데이트
       if (fbDB) {
         const roomRef = getRoomRef();
         if (!roomRef) return;
 
         if (action === 'POINT_MOVE') {
-          // 핵심: 전체 객체를 덮어쓰지 않고, 조작된 점의 좌표만 update하여 조원 간 덮어쓰기 충돌 완전 방지!
           const updatePayload = {
             sender: clientId,
             updatedAt: firebase.database.ServerValue.TIMESTAMP
@@ -901,11 +974,13 @@
               updatePayload[`coords/${pk}`] = data.points[pk];
             });
           }
-          roomRef.child(`points/${state.myGroup}`).update(updatePayload);
+          roomRef.child(`points/${state.myGroup}`).update(updatePayload).catch((err) => {
+            console.warn("Firebase write failed. Backup MQTT used. Error:", err);
+          });
         } else if (action === 'SUBMIT_TERRITORY') {
-          roomRef.child(`submissions/${data.group}`).set(data.submission);
+          roomRef.child(`submissions/${data.group}`).set(data.submission).catch(() => {});
         } else if (action === 'TEACHER_META') {
-          roomRef.child('meta').update(data);
+          roomRef.child('meta').update(data).catch(() => {});
         } else if (action === 'RUN_BATTLE') {
           roomRef.child('battleEvent').set({
             sender: clientId,
@@ -914,12 +989,12 @@
             exclusiveSegments: data.exclusiveSegments,
             overlappingSegments: data.overlappingSegments,
             submissions: data.submissions
-          });
+          }).catch(() => {});
           roomRef.child('meta').update({
             scores: data.scores,
             roundSnapshots: data.roundSnapshots,
             territoriesRevealed: true
-          });
+          }).catch(() => {});
         }
       }
     }
@@ -928,7 +1003,7 @@
       if (!msg || msg.room !== state.roomCode) return;
 
       if (msg.action === 'POINT_MOVE') {
-        const isSameGroupStudent = (!state.isTeacher && msg.group === state.myGroup && msg.round === state.currentRound);
+        const isSameGroupStudent = (!state.isTeacher && Number(msg.group) === Number(state.myGroup) && Number(msg.round) === Number(state.currentRound));
         const isTeacherScreen = state.isTeacher;
 
         if (isSameGroupStudent || isTeacherScreen) {
@@ -943,6 +1018,21 @@
             });
             renderCanvas();
           }
+        }
+      } else if (msg.action === 'REQUEST_STATE') {
+        // 이미 접속해 있는 모둠원이 신규 접속자에게 현재 모둠의 점 좌표 전송
+        if (!state.isTeacher && Number(msg.group) === Number(state.myGroup) && Number(msg.round) === Number(state.currentRound)) {
+          broadcastSync('STATE_RESPONSE', {
+            points: state.points,
+            group: state.myGroup
+          }, true);
+        }
+      } else if (msg.action === 'STATE_RESPONSE') {
+        if (msg.data && Number(msg.data.group) === Number(state.myGroup) && msg.data.points) {
+          Object.keys(msg.data.points).forEach(k => {
+            if (k !== draggingPoint) state.points[k] = msg.data.points[k];
+          });
+          renderCanvas();
         }
       } else if (msg.action === 'SUBMIT_TERRITORY') {
         if (msg.data && msg.data.group && msg.data.submission) {
@@ -1690,7 +1780,6 @@
       const chosenRound = parseInt(document.getElementById('selectRound').value) || 1;
       const targetRoom = document.getElementById('inputRoomCode').value.trim().toUpperCase() || 'CLASS1';
 
-      // 다른 모둠원이 이미 점유했는지 실시간 최종 검증 (8초 이내 활성 세션만)
       const now = Date.now();
       let isAlreadyTaken = false;
       Object.keys(activePresence).forEach(pId => {
@@ -1709,7 +1798,6 @@
         return;
       }
 
-      // 이전 점 점유 해제 후 새 점으로 등록
       clearMyPresence();
 
       state.isTeacher = false;
@@ -1724,8 +1812,13 @@
       resetPointsForRound(chosenRound);
       initSyncNetwork();
 
-      // 입장 즉시 Firebase 및 모든 클라이언트에 점유 등록
+      // 입장 즉시 Firebase 및 MQTT에 등록
       registerMyPresence();
+
+      // 기존 접속 중인 조원들에게 현재 진행 중인 좌표 요청
+      setTimeout(() => {
+        broadcastSync('REQUEST_STATE', { group: state.myGroup, round: state.currentRound }, true);
+      }, 200);
 
       document.getElementById('modalPortal').classList.add('hidden');
       document.getElementById('cardStudentControl').classList.remove('hidden');
