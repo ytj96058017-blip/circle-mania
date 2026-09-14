@@ -751,10 +751,12 @@
         console.warn('BroadcastChannel error:', e);
       }
 
-      // Firebase Realtime DB 구독 설정
+      // Firebase Realtime DB 구독 설정 (기존 리스너 정리 후 1회만 등록)
       if (fbDB) {
         const roomRef = getRoomRef();
         if (roomRef) {
+          roomRef.off(); // 중복 리스너 완전 제거
+
           // 실시간 연결 상태 표시
           fbDB.ref('.info/connected').on('value', (snap) => {
             const badge = document.getElementById('syncStatusText');
@@ -794,22 +796,22 @@
             renderCanvas();
           });
 
-          // 2. 모둠별 점 좌표 동기화 (Points by Group)
+          // 2. 모둠별 점 좌표 정밀 동기화 (내 조작 점 보호 & 개별 점 단위 병합)
           roomRef.child('points').on('value', (snap) => {
             const val = snap.val();
             if (!val) return;
-            if (!state.isTeacher) {
-              const myGroupPoints = val[state.myGroup];
-              if (myGroupPoints && myGroupPoints.sender !== clientId) {
-                Object.assign(state.points, myGroupPoints.coords);
-                renderCanvas();
-              }
-            } else {
-              const teacherGroupPts = val[state.myGroup] || val[1];
-              if (teacherGroupPts && teacherGroupPts.sender !== clientId && !state.battleExecuted) {
-                Object.assign(state.points, teacherGroupPts.coords);
-                renderCanvas();
-              }
+            const targetGroup = state.isTeacher ? (state.myGroup || 1) : state.myGroup;
+            const groupData = val[targetGroup];
+
+            if (groupData && groupData.coords) {
+              const coords = groupData.coords;
+              Object.keys(coords).forEach(k => {
+                // 핵심: 내가 현재 손가락으로 드래그하고 있는 내 점은 외부 데이터로 덮어쓰지 않음!
+                if (k !== draggingPoint && typeof coords[k] === 'number') {
+                  state.points[k] = coords[k];
+                }
+              });
+              renderCanvas();
             }
           });
 
@@ -865,7 +867,7 @@
     function broadcastSync(action, data = {}, forceImmediate = false) {
       const now = performance.now();
       if (!forceImmediate && action === 'POINT_MOVE' && (now - lastBroadcastTime < THROTTLE_INTERVAL_MS)) {
-        return; // 과도한 네트워크 전송을 방지하는 스마트 쓰로틀링
+        return; // 과도한 네트워크 전송 방지 쓰로틀링
       }
       lastBroadcastTime = now;
 
@@ -878,20 +880,28 @@
         data: data
       };
 
-      // 1. BroadcastChannel (동일 기기 초고속 로컬 전송)
+      // 1. BroadcastChannel (로컬 탭 즉시 전송)
       if (localChannel) localChannel.postMessage(packet);
 
-      // 2. Firebase Realtime Database 업데이트
+      // 2. Firebase Realtime Database 업데이트 (개별 점 충돌 없는 정밀 저장)
       if (fbDB) {
         const roomRef = getRoomRef();
         if (!roomRef) return;
 
         if (action === 'POINT_MOVE') {
-          roomRef.child(`points/${state.myGroup}`).set({
+          // 핵심: 전체 객체를 덮어쓰지 않고, 조작된 점의 좌표만 update하여 조원 간 덮어쓰기 충돌 완전 방지!
+          const updatePayload = {
             sender: clientId,
-            coords: state.points,
             updatedAt: firebase.database.ServerValue.TIMESTAMP
-          });
+          };
+          if (data.pointKey && typeof data.angle === 'number') {
+            updatePayload[`coords/${data.pointKey}`] = data.angle;
+          } else if (data.points) {
+            Object.keys(data.points).forEach(pk => {
+              updatePayload[`coords/${pk}`] = data.points[pk];
+            });
+          }
+          roomRef.child(`points/${state.myGroup}`).update(updatePayload);
         } else if (action === 'SUBMIT_TERRITORY') {
           roomRef.child(`submissions/${data.group}`).set(data.submission);
         } else if (action === 'TEACHER_META') {
@@ -921,9 +931,18 @@
         const isSameGroupStudent = (!state.isTeacher && msg.group === state.myGroup && msg.round === state.currentRound);
         const isTeacherScreen = state.isTeacher;
 
-        if ((isSameGroupStudent || isTeacherScreen) && msg.data && msg.data.points) {
-          Object.assign(state.points, msg.data.points);
-          renderCanvas();
+        if (isSameGroupStudent || isTeacherScreen) {
+          if (msg.data && msg.data.pointKey && typeof msg.data.angle === 'number') {
+            if (msg.data.pointKey !== draggingPoint) {
+              state.points[msg.data.pointKey] = msg.data.angle;
+              renderCanvas();
+            }
+          } else if (msg.data && msg.data.points) {
+            Object.keys(msg.data.points).forEach(k => {
+              if (k !== draggingPoint) state.points[k] = msg.data.points[k];
+            });
+            renderCanvas();
+          }
         }
       } else if (msg.action === 'SUBMIT_TERRITORY') {
         if (msg.data && msg.data.group && msg.data.submission) {
@@ -2363,7 +2382,7 @@
         if (!k || typeof state.points[k] === 'undefined') continue;
         const pt = getPointCoords(state.points[k]);
         const dist = Math.hypot(pt.x - x, pt.y - y);
-        if (dist <= 24) {
+        if (dist <= 28) {
           draggingPoint = k;
           playSound('pop');
           break;
@@ -2379,14 +2398,23 @@
 
       state.points[draggingPoint] = normAngle;
 
+      // 점 단위 독립 전송
       broadcastSync('POINT_MOVE', {
-        points: { [draggingPoint]: normAngle }
+        pointKey: draggingPoint,
+        angle: normAngle
       });
 
       renderCanvas();
     }
 
     function handlePointerUp() {
+      if (draggingPoint) {
+        // 손가락을 뗄 때 최종 위치를 지연 없이 강제 즉시 전송(forceImmediate = true)
+        broadcastSync('POINT_MOVE', {
+          pointKey: draggingPoint,
+          angle: state.points[draggingPoint]
+        }, true);
+      }
       draggingPoint = null;
     }
 
